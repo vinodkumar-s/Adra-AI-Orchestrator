@@ -867,6 +867,7 @@ function initializeEventListeners() {
 async function init() {
     console.log('🚀 Adra Admin Dashboard initializing...');
 
+    await initSupabase();
     await loadClientsData();
     updateMetrics();
     applyFilters();
