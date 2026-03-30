@@ -40,11 +40,15 @@ We recently upgraded the platform with several critical enhancements:
 
 ## 📸 Project Gallery
 
-### 1. n8n Orchestration Workflow
+### 1. WhatsApp Conversational Lead Capture
+A professional, automated consultant that engages users, collects contact info, and processes project proposals.
+![WhatsApp Chat](assets/whatsapp_chat.png)
+
+### 2. n8n Orchestration Workflow
 The heart of the automation, handling everything from WhatsApp media to complex lead qualification logic.
 ![n8n Workflow](assets/n8n_flow.png)
 
-### 2. Admin Dashboard Overview
+### 3. Admin Dashboard Overview
 Real-time tracking of all leads, conversion metrics, and engagement status.
 ![Dashboard Overview](assets/admin_dashboard_1.png)
 
