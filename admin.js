@@ -3,8 +3,8 @@
 // ===================================
 const CONFIG = {
     // Supabase Configuration
-    SUPABASE_URL: 'https://rnnkjlosdfngdgiydsdk.supabase.co',
-    SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJubmtqbG9zZGZuZ2RnaXlkc2RrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4Mzk2MzAsImV4cCI6MjA4NjQxNTYzMH0.vHbbfgk8vSMoj-JQwm9-AvFBPQrnEoJMamykhTnvitY',
+    SUPABASE_URL: '',
+    SUPABASE_ANON_KEY: '',
 
     // Toggle between Supabase and Legacy N8N
     USE_SUPABASE: true,
@@ -20,9 +20,21 @@ const CONFIG = {
 
 // Initialize Supabase Client
 let supabaseClient = null;
-if (CONFIG.USE_SUPABASE && CONFIG.SUPABASE_URL !== 'YOUR_SUPABASE_URL') {
-    // Note: 'supabase' is the global object from the CDN script
-    supabaseClient = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+
+async function initSupabase() {
+    try {
+        const resp = await fetch('http://localhost:8000/config');
+        const config = await resp.json();
+        CONFIG.SUPABASE_URL = config.SUPABASE_URL;
+        CONFIG.SUPABASE_ANON_KEY = config.SUPABASE_ANON_KEY;
+
+        if (CONFIG.USE_SUPABASE && CONFIG.SUPABASE_URL) {
+            supabaseClient = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+            console.log('✅ Supabase initialized successfully');
+        }
+    } catch (e) {
+        console.error('❌ Failed to fetch config from backend:', e);
+    }
 }
 
 // ===================================

@@ -317,6 +317,13 @@ async def chat(request: ChatRequest):
 # Serves all other static files (css, js, images) from the current folder
 app.mount("/", StaticFiles(directory=os.path.dirname(__file__)), name="static")
 
+@app.get("/config")
+async def get_config():
+    return {
+        "SUPABASE_URL": os.getenv("SUPABASE_URL"),
+        "SUPABASE_ANON_KEY": os.getenv("SUPABASE_ANON_KEY")
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="localhost", port=8000)
