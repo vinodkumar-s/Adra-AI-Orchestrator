@@ -2,7 +2,7 @@
 
 Adra is a premium, high-performance AI assistant platform designed to orchestrate complex interactions between users, intelligent agents, and automated workflows. It seamlessly bridges the gap between general-purpose AI (LangGraph/Gemini) and business-specific automation (n8n).
 
-![Adra Chat Interface](https://via.placeholder.com/800x450.png?text=Adra+AI+Chat+Interface+Mockup)
+![Adra Chat Interface](assets/adra_mockup.png)
 *Capture: The intelligent chat interface in action.*
 
 ## ✨ Key Features
