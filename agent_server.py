@@ -321,7 +321,8 @@ app.mount("/", StaticFiles(directory=os.path.dirname(__file__)), name="static")
 async def get_config():
     return {
         "SUPABASE_URL": os.getenv("SUPABASE_URL"),
-        "SUPABASE_ANON_KEY": os.getenv("SUPABASE_ANON_KEY")
+        "SUPABASE_ANON_KEY": os.getenv("SUPABASE_ANON_KEY"),
+        "ADMIN_AI_WEBHOOK_URL": os.getenv("ADMIN_AI_WEBHOOK_URL")
     }
 
 if __name__ == "__main__":

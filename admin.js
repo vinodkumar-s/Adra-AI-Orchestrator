@@ -32,6 +32,11 @@ async function initSupabase() {
             supabaseClient = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
             console.log('✅ Supabase initialized successfully');
         }
+        
+        // Also update the widget's webhook if it exists
+        if (config.ADMIN_AI_WEBHOOK_URL) {
+            window.ADRA_AI_WEBHOOK_URL = config.ADMIN_AI_WEBHOOK_URL;
+        }
     } catch (e) {
         console.error('❌ Failed to fetch config from backend:', e);
     }
@@ -883,7 +888,7 @@ document.addEventListener('DOMContentLoaded', init);
     // n8n Chat Trigger webhook for the Admin Intelligence Agent
     // The Chat Trigger generates a URL like:
     //   https://<your-n8n-host>/webhook/<webhookId>/chat
-    const AI_WEBHOOK_URL = 'https://vinodkumars001.app.n8n.cloud/webhook/b3b0a7fe-5eef-4449-b480-7ef11c51ae63/chat';
+    const AI_WEBHOOK_URL = window.ADRA_AI_WEBHOOK_URL || 'https://vinod2.app.n8n.cloud/webhook/b3b0a7fe-5eef-4449-b480-7ef11c51ae63/chat';
 
     // Session ID persisted across page visits so Postgres memory works
     const SESSION_KEY = 'adra_admin_ai_session';
