@@ -40,37 +40,45 @@ We recently upgraded the platform with several critical enhancements:
 
 ## 📸 Project Gallery
 
-### 1. WhatsApp Conversational Lead Capture
-A professional, automated consultant that engages users, collects contact info, and processes project proposals.
-![WhatsApp Chat](assets/whatsapp_chat.png)
+### 1. Adra Product Studio Landing Page
+**A Stunning First Impression**  
+The entry point to the Adra ecosystem features a minimal, high-impact design that sets the tone for the premium experience within. Optimized for conversion, this landing page serves as a high-speed gateway that invites users to engage with either the AI Chatbot or the Admin Dashboard, depending on their role and intent.
+![Adra Landing Page](assets/landing_page.png)
 
-### 2. n8n Orchestration Workflow
-The heart of the automation, handling everything from WhatsApp media to complex lead qualification logic.
-![n8n Workflow](assets/n8n_flow.png)
-
-### 3. Admin Dashboard Overview
-Real-time tracking of all leads, conversion metrics, and engagement status.
-![Dashboard Overview](assets/admin_dashboard_1.png)
-
-### 3. Lead Management & Filters
-Powerful sorting and filtering tools to manage a growing pipeline of clients.
-![Lead Table](assets/admin_dashboard_2.png)
-
-### 4. Deep Client Insights
-Rich, structured details for every lead, including project ideas, budgets, and timelines.
-![Client Details](assets/client_details.png)
-
-### 5. Adra Intelligence (AI Analyst)
-Your internal assistant for analyzing data and managing risks directly within the dashboard.
-![AI Analyst](assets/ai_analyst.png)
-
-### 6. Unified Assistant Interface
-The sleek, glassmorphism-inspired chat interface for end-users.
+### 2. Unified Assistant Interface
+**The Premium Client-Facing Experience**  
+Our primary web-based chat assistant offers a seamless, interactive experience for end-users. Combining Google's Gemini Pro for general reasoning with our custom n8n workflows for specialized tasks, the assistant provides a "unified" interface that responds to any user need with millisecond-latency and stunning visual feedback.
 ![Chat Interface](assets/chat_interface.png)
 
+### 3. Admin Dashboard Overview
+**Real-Time Lifecycle Monitoring**  
+The administrative control center provides a bird's-eye view of your entire business pipeline. Built with a modern, glassmorphism-inspired design, the dashboard features real-time performance metrics including Total Clients, Qualification Rates, and Average Onboarding Completion. This allows decision-makers to monitor growth and operational efficiency at a single glance.
+![Dashboard Overview](assets/admin_dashboard_1.png)
+
+### 4. Advanced Lead Management & Filtering
+**Scalable Pipeline Organization**  
+As your client base grows, organization becomes critical. Adra's management interface allows admins to search, sort, and filter leads based on their current status (New, Qualified, Rejected, etc.) and completion stage. This ensures that no high-priority deal is ever lost and that the sales team can focus their energy where it matters most—on the hottest leads.
+![Lead Table](assets/admin_dashboard_2.png)
+
+### 5. Deep Client Intelligence
+**Structured Insights from Unstructured Conversations**  
+This view showcases the power of our data extraction logic. Adra's AI processes conversational logs and uploaded documents to populate a structured "Client Details" profile. Categories such as Product Idea, Budget, Timeline, and KPIs are automatically extracted with high precision, providing internal teams with actionable insights for project scoping and risk assessment.
+![Client Details](assets/client_details.png)
+
+### 6. Adra Intelligence (Internal AI Analyst)
+**Data-Driven Decision Making**  
+The "Adra Intelligence" widget is a specialized internal-facing assistant designed for data analysts. It can autonomously search through your entire lead database to identify trends, perform risk scoring on new deals, and prioritize tasks based on commercial value. This internal layer turns raw client data into a strategic intelligence asset for the company.
+![AI Analyst](assets/ai_analyst.png)
+
 ### 7. WhatsApp Conversational Lead Capture
-A professional, automated consultant that engages users, collects contact info, and processes project proposals.
+**Seamless User Onboarding via Twilio & n8n**  
+This module leverages the Twilio API to turn WhatsApp into a powerful lead extraction tool. The underlying n8n engine manages a stateful conversation that guides users through a professional intake process—collecting contact information, validating phone numbers, and even processing high-context PDF project proposals. This ensures a friction-less entry point for potential clients directly from their mobile devices.
 ![WhatsApp Chat](assets/whatsapp_chat.png)
+
+### 8. n8n Orchestration Workflow
+**The "Brain" of the Multi-Channel Pipeline**  
+This complex orchestration layer serves as the central nervous system of Adra. It features sophisticated routing logic that distinguishes between general inquiries and high-value lead captures. The workflow is built with a modular architecture, utilizing specialized sub-workflows for binary file processing, OTP verification, and deep LLM-based lead scoring, ensuring 100% data integrity throughout the lifecycle.
+![n8n Workflow](assets/n8n_flow.png)
 
 ---
 
@@ -98,4 +106,4 @@ python agent_server.py
 ```
 
 ---
-
+*Built with ❤️ for Adra Product Studio.*
