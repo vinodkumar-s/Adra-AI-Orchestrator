@@ -1,0 +1,614 @@
+{
+  "name": "SUB: Account Switch Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "sw-email-extract",
+              "name": "switch_email",
+              "value": "={{ $('When Executed by Another Workflow').item.json.chatInput.match(/[\\w.+\\-]+@[\\w\\-]+\\.[a-zA-Z]{2,}/)?.[0] ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "sw-active",
+              "name": "active_email",
+              "value": "={{ $('When Executed by Another Workflow').item.json.active_email ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "sw-sid",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -576,
+        240
+      ],
+      "id": "fec2da77-65af-4415-aa70-a1179e4d1b21",
+      "name": "Extract Switch Email"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM leads WHERE email = '{{ $json.switch_email }}' LIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -352,
+        240
+      ],
+      "id": "b066c273-16b3-47dc-85ef-87a7dba45a6e",
+      "name": "Check Switch User in DB",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PayuJ4kTygcVxBeP",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "sw-exists",
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -128,
+        240
+      ],
+      "id": "4ad07c78-805a-4f25-9b61-2eec767043d8",
+      "name": "IF: Switch User Exists?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "same-account",
+              "leftValue": "={{ $('Extract Switch Email').item.json.switch_email }}",
+              "rightValue": "={{ $('Extract Switch Email').item.json.active_email }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        96,
+        144
+      ],
+      "id": "303b8fc4-abe1-463d-bd4e-fc9999111aa7",
+      "name": "IF: Same Account?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO session_switch_pending (sessionid, pending_email, phone, otp_sent, created_at)\nVALUES (\n  '{{ $('When Executed by Another Workflow').item.json.sessionId }}',\n  '{{ $('Extract Switch Email').item.json.switch_email }}',\n  NULLIF('{{ $('Check Switch User in DB').item.json.phone }}', ''),\n  false,\n  NOW()\n)\nON CONFLICT (sessionid)\nDO UPDATE SET\n  pending_email = EXCLUDED.pending_email,\n  phone = EXCLUDED.phone,\n  otp_sent = false,\n  created_at = NOW();",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        320,
+        240
+      ],
+      "id": "d08c47fd-c67a-490c-b379-6343b3da4967",
+      "name": "Save Pending Switch",
+      "credentials": {
+        "postgres": {
+          "id": "PayuJ4kTygcVxBeP",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-phone",
+              "leftValue": "={{ $('Check Switch User in DB').item.json.phone }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        544,
+        240
+      ],
+      "id": "b206e5ff-b100-4d07-8249-7b32076a6936",
+      "name": "IF: Has Phone?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ask-pref-ctx",
+              "name": "chatInput",
+              "value": "={{ 'SYSTEM_ASK_OTP_PREFERENCE::pending_email::' + $('Extract Switch Email').item.json.switch_email + '::phone::' + $('Check Switch User in DB').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "ask-pref-sid",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        768,
+        144
+      ],
+      "id": "224578d1-9926-49f8-943e-6885772ca332",
+      "name": "Set Ask OTP Preference Context"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "already-ctx",
+              "name": "chatInput",
+              "value": "SYSTEM_ALREADY_THIS_ACCOUNT",
+              "type": "string"
+            },
+            {
+              "id": "already-sid",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        320,
+        48
+      ],
+      "id": "b570d78b-3911-4c1c-92d3-efa4c1c41eb3",
+      "name": "Set Already This Account Context"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "notfound-ctx",
+              "name": "chatInput",
+              "value": "SYSTEM_SWITCH_NOT_FOUND",
+              "type": "string"
+            },
+            {
+              "id": "notfound-sid",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        96,
+        432
+      ],
+      "id": "ef2e2623-b687-4efc-bc47-7af2a5e86a3c",
+      "name": "Set Switch Not Found Context"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -800,
+        240
+      ],
+      "id": "785f20c8-feea-4bb1-ac68-083d5b09ea6d",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "92c3ce2b-4920-44f1-a660-eb6324aca1c8",
+              "name": "chatInput",
+              "value": "={{ $json.chatInput }}",
+              "type": "string"
+            },
+            {
+              "id": "a6dd7372-74ac-4eb1-998d-1ed0036e55fb",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        992,
+        144
+      ],
+      "id": "0abf1669-39e5-4627-9810-d45a8b34cc8c",
+      "name": "Return Result"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "92c3ce2b-4920-44f1-a660-eb6324aca1c8",
+              "name": "chatInput",
+              "value": "={{ $json.chatInput }}",
+              "type": "string"
+            },
+            {
+              "id": "a6dd7372-74ac-4eb1-998d-1ed0036e55fb",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        992,
+        336
+      ],
+      "id": "3f986fe0-b98b-4b1a-999f-43022005583a",
+      "name": "Return Result1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "92c3ce2b-4920-44f1-a660-eb6324aca1c8",
+              "name": "chatInput",
+              "value": "={{ $json.chatInput }}",
+              "type": "string"
+            },
+            {
+              "id": "a6dd7372-74ac-4eb1-998d-1ed0036e55fb",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        320,
+        432
+      ],
+      "id": "8d7fb8bd-dc6f-4e3c-9f2e-19df28a21fe1",
+      "name": "Return Result2"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "wKsqthcQRMLIuiOF",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/wKsqthcQRMLIuiOF",
+          "cachedResultName": "SUB: OTP Send"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "pending_email": "={{ $('Extract Switch Email').item.json.switch_email }}",
+            "channel": "email",
+            "sessionId": "={{ $('When Executed by Another Workflow').item.json.sessionId }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "key": "pending_email",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "key": "channel",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "key": "sessionId",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        752,
+        336
+      ],
+      "id": "e5121f49-4970-453f-ad9b-454b5ef826f5",
+      "name": "Call 'SUB: OTP Send'1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "92c3ce2b-4920-44f1-a660-eb6324aca1c8",
+              "name": "chatInput",
+              "value": "={{ $json.chatInput }}",
+              "type": "string"
+            },
+            {
+              "id": "a6dd7372-74ac-4eb1-998d-1ed0036e55fb",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        560,
+        -80
+      ],
+      "id": "164499fa-4735-4782-a582-c7f0c2add32d",
+      "name": "Return Result3"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Extract Switch Email": {
+      "main": [
+        [
+          {
+            "node": "Check Switch User in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Switch User in DB": {
+      "main": [
+        [
+          {
+            "node": "IF: Switch User Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Switch User Exists?": {
+      "main": [
+        [
+          {
+            "node": "IF: Same Account?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Switch Not Found Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Same Account?": {
+      "main": [
+        [
+          {
+            "node": "Set Already This Account Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Pending Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Pending Switch": {
+      "main": [
+        [
+          {
+            "node": "IF: Has Phone?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Has Phone?": {
+      "main": [
+        [
+          {
+            "node": "Set Ask OTP Preference Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call 'SUB: OTP Send'1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Ask OTP Preference Context": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Already This Account Context": {
+      "main": [
+        [
+          {
+            "node": "Return Result3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Switch Not Found Context": {
+      "main": [
+        [
+          {
+            "node": "Return Result2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Extract Switch Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'SUB: OTP Send'1": {
+      "main": [
+        [
+          {
+            "node": "Return Result1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "89843620-84ab-4ff3-aa19-0bdd4cd79135",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fdf69033afc83c2a5fffb2d2cf97308b9d71ed028d01728ca98784adc1ae74ab"
+  },
+  "id": "knDbmLap9slKber9",
+  "tags": []
+}

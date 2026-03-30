@@ -1,0 +1,440 @@
+{
+  "name": "SUB: OTP Verify",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "otp-code-check",
+              "leftValue": "={{ $('When Executed by Another Workflow').item.json.chatInput.trim() }}",
+              "rightValue": "^\\d{6}$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -160,
+        272
+      ],
+      "id": "8f07ac14-2049-4473-811d-040d30263a8b",
+      "name": "IF: 6-Digit Code?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://verify.twilio.com/v2/Services/VAbe62a073cc99f7b994fd5cc72dc4f5ff/VerificationCheck",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twilioApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $('When Executed by Another Workflow').item.json.pending_switch_phone || $('When Executed by Another Workflow').item.json.pending_email }}"
+            },
+            {
+              "name": "Code",
+              "value": "={{ $('When Executed by Another Workflow').item.json.chatInput }}"
+            },
+            {
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        64,
+        176
+      ],
+      "id": "6f78eaed-8057-4498-8426-ef3899d2ab97",
+      "name": "Verify OTP (Node)",
+      "credentials": {
+        "twilioApi": {
+          "id": "7BzSOgzrDymm6Hix",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "otp-approved",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "approved",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        288,
+        176
+      ],
+      "id": "c6a75e72-0bf3-4ab4-a960-f7cb52a6f392",
+      "name": "IF: OTP Approved?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO session_active_user (sessionid, current_email)\nVALUES (\n  '{{ $('When Executed by Another Workflow').item.json.sessionId }}', \n  '{{ $('When Executed by Another Workflow').item.json.pending_email }}'\n)\nON CONFLICT (sessionid)\nDO UPDATE SET current_email = EXCLUDED.current_email, updated_at = NOW();\n\nDELETE FROM session_switch_pending \nWHERE sessionid = '{{ $('When Executed by Another Workflow').item.json.sessionId }}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        512,
+        80
+      ],
+      "id": "12b40f67-9ecf-4951-a3d2-50e56d4c9598",
+      "name": "Switch Account + Clear Pending",
+      "credentials": {
+        "postgres": {
+          "id": "PayuJ4kTygcVxBeP",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM leads \nWHERE email = '{{ $('When Executed by Another Workflow').item.json.pending_email }}' \nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        736,
+        80
+      ],
+      "id": "d7187f5e-a34e-4bf1-9774-30647ef51c06",
+      "name": "Load Switched User",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PayuJ4kTygcVxBeP",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "switched-ctx",
+              "name": "chatInput",
+              "value": "={{ 'EXISTING_USER::email::' + $json.email + '::name::' + ($json.name ?? '') + '::company::' + ($json.company ?? '') + '::product_idea::' + ($json.product_idea ?? '') + '::budget::' + ($json.budget ?? '') + '::timeline::' + ($json.timeline ?? '') + '::urgency::' + ($json.urgency ?? '') + '::stage::' + ($json.stage ?? '') + '::market::' + ($json.market ?? '') + '::kpi::' + ($json.kpi ?? '') + '::expectations::' + ($json.expectations ?? '') + '::phone::' + ($json.phone ?? '') + '::original_message::account switched successfully' }}",
+              "type": "string"
+            },
+            {
+              "id": "switched-sid",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.pending_email }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        960,
+        80
+      ],
+      "id": "3e33ca11-31ee-42be-8eda-59dd8019097b",
+      "name": "Set Switched User Context"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "otp-fail-ctx",
+              "name": "chatInput",
+              "value": "SYSTEM_OTP_FAILED",
+              "type": "string"
+            },
+            {
+              "id": "otp-fail-sid",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        512,
+        272
+      ],
+      "id": "52fc05c2-11b5-4a0c-a871-181fe26e039b",
+      "name": "Set OTP Failed Context"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "not-6digit-ctx",
+              "name": "chatInput",
+              "value": "SYSTEM_OTP_WAITING",
+              "type": "string"
+            },
+            {
+              "id": "not-6digit-sid",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        64,
+        368
+      ],
+      "id": "3f6c9488-86f2-4af2-b4c3-7c2ab39d5ff4",
+      "name": "Set OTP Waiting Context"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -384,
+        272
+      ],
+      "id": "9650e6d4-05b3-4727-a4a2-2fc8df3619ec",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "92c3ce2b-4920-44f1-a660-eb6324aca1c8",
+              "name": "chatInput",
+              "value": "={{ $json.chatInput }}",
+              "type": "string"
+            },
+            {
+              "id": "a6dd7372-74ac-4eb1-998d-1ed0036e55fb",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        720,
+        272
+      ],
+      "id": "5f592330-bab8-427e-98ea-e52aebf974fa",
+      "name": "Return Result"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9e0658b9-10a9-4f7f-876c-47f6e3dab5ad",
+              "name": "chatInput",
+              "value": "={{ $json.chatInput }}",
+              "type": "string"
+            },
+            {
+              "id": "f6cf54ae-8742-4e7e-af85-09faaa01f90a",
+              "name": "sessionId",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        384
+      ],
+      "id": "ea2b039c-8db6-4461-a76b-7b28e2da80a7",
+      "name": "Return Result1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "IF: 6-Digit Code?": {
+      "main": [
+        [
+          {
+            "node": "Verify OTP (Node)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set OTP Waiting Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify OTP (Node)": {
+      "main": [
+        [
+          {
+            "node": "IF: OTP Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: OTP Approved?": {
+      "main": [
+        [
+          {
+            "node": "Switch Account + Clear Pending",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set OTP Failed Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Account + Clear Pending": {
+      "main": [
+        [
+          {
+            "node": "Load Switched User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Switched User": {
+      "main": [
+        [
+          {
+            "node": "Set Switched User Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "IF: 6-Digit Code?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set OTP Failed Context": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set OTP Waiting Context": {
+      "main": [
+        [
+          {
+            "node": "Return Result1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "3ffa5169-3440-40c4-b7b9-040d0f3fb5dd",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fdf69033afc83c2a5fffb2d2cf97308b9d71ed028d01728ca98784adc1ae74ab"
+  },
+  "id": "KAFFquhy1BhqAwtx",
+  "tags": []
+}

@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+pydantic
+httpx
+python-dotenv
+pytz
+wikipedia
+geopy
+timezonefinder
+langchain
+langchain-google-genai
+langchain-community
+langchain-tavily
+langgraph
+langchain-mcp-adapters
+python-multipart
+# Add any others if needed

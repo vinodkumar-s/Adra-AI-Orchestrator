@@ -1,0 +1,403 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Adra Product Studio - Admin Dashboard for Client Management">
+    <title>Admin Dashboard - Adra Product Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="admin.css">
+    <!-- Supabase JS Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+    <!-- Background Gradient -->
+    <div class="background-gradient"></div>
+
+    <!-- Main Container -->
+    <div class="admin-container">
+        <!-- Header -->
+        <header class="admin-header glass-card">
+            <div class="header-content">
+                <div class="header-left">
+                    <img src="adra_logo.png" alt="Adra Logo" class="admin-logo">
+                    <div class="header-text">
+                        <h1>Admin Dashboard</h1>
+                        <p>Client Lead Management System</p>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-secondary" id="refresh-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path
+                                d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+                        </svg>
+                        Refresh
+                    </button>
+                    <button class="btn-primary" id="export-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                        </svg>
+                        Export Data
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Metrics Overview -->
+        <section class="metrics-grid">
+            <div class="metric-card glass-card" id="total-clients-card">
+                <div class="metric-icon" style="background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%);">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                </div>
+                <div class="metric-content">
+                    <p class="metric-label">Total Clients</p>
+                    <h2 class="metric-value" id="total-clients">0</h2>
+                    <p class="metric-change positive">
+                        <span>+12%</span> from last week
+                    </p>
+                </div>
+            </div>
+
+            <div class="metric-card glass-card" id="qualified-leads-card">
+                <div class="metric-icon" style="background: linear-gradient(135deg, #a78bfa 0%, #c084fc 100%);">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
+                </div>
+                <div class="metric-content">
+                    <p class="metric-label">Qualified Leads</p>
+                    <h2 class="metric-value" id="qualified-leads">0</h2>
+                    <p class="metric-change positive">
+                        <span>+8%</span> conversion rate
+                    </p>
+                </div>
+            </div>
+
+            <div class="metric-card glass-card" id="avg-completion-card">
+                <div class="metric-icon" style="background: linear-gradient(135deg, #34d399 0%, #10b981 100%);">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 20V10M12 20V4M6 20v-6" />
+                    </svg>
+                </div>
+                <div class="metric-content">
+                    <p class="metric-label">Avg. Completion</p>
+                    <h2 class="metric-value" id="avg-completion">0%</h2>
+                    <p class="metric-change positive">
+                        <span>+5%</span> this month
+                    </p>
+                </div>
+            </div>
+
+            <div class="metric-card glass-card" id="active-today-card">
+                <div class="metric-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                </div>
+                <div class="metric-content">
+                    <p class="metric-label">Active Today</p>
+                    <h2 class="metric-value" id="active-today">0</h2>
+                    <p class="metric-change neutral">
+                        <span>Live</span> monitoring
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Filters and Search -->
+        <section class="controls-section glass-card">
+            <div class="search-box">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.35-4.35" />
+                </svg>
+                <input type="text" id="search-input" placeholder="Search clients by name, email, or company...">
+            </div>
+
+            <div class="filter-controls">
+                <select id="status-filter" class="filter-select">
+                    <option value="all">All Status</option>
+                    <option value="qualified">Qualified</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="new">New</option>
+                </select>
+
+                <select id="completion-filter" class="filter-select">
+                    <option value="all">All Completion</option>
+                    <option value="high">High (>70%)</option>
+                    <option value="medium">Medium (30-70%)</option>
+                    <option value="low">Low (<30%)< /option>
+                </select>
+
+                <button class="btn-secondary" id="clear-filters">Clear Filters</button>
+            </div>
+        </section>
+
+        <!-- Clients Table -->
+        <section class="table-section glass-card">
+            <div class="table-header">
+                <h2>Client Overview</h2>
+                <p class="table-subtitle">Showing <span id="showing-count">0</span> of <span id="total-count">0</span>
+                    clients</p>
+            </div>
+
+            <div class="table-container">
+                <table class="clients-table" id="clients-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="name">
+                                Name
+                                <svg class="sort-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14M19 12l-7 7-7-7" />
+                                </svg>
+                            </th>
+                            <th data-sort="email">
+                                Email
+                                <svg class="sort-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14M19 12l-7 7-7-7" />
+                                </svg>
+                            </th>
+                            <th data-sort="company">
+                                Company
+                                <svg class="sort-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14M19 12l-7 7-7-7" />
+                                </svg>
+                            </th>
+                            <th data-sort="completion">
+                                Completion
+                                <svg class="sort-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14M19 12l-7 7-7-7" />
+                                </svg>
+                            </th>
+                            <th data-sort="files">
+                                Files
+                                <svg class="sort-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14M19 12l-7 7-7-7" />
+                                </svg>
+                            </th>
+                            <th data-sort="status">
+                                Status
+                                <svg class="sort-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14M19 12l-7 7-7-7" />
+                                </svg>
+                            </th>
+                            <th data-sort="last_active">
+                                Last Active
+                                <svg class="sort-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2">
+                                    <path d="M12 5v14M19 12l-7 7-7-7" />
+                                </svg>
+                            </th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="clients-tbody">
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Empty State -->
+            <div class="empty-state" id="empty-state" style="display: none;">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M16 16s-1.5-2-4-2-4 2-4 2M9 9h.01M15 9h.01" />
+                </svg>
+                <h3>No clients found</h3>
+                <p>Try adjusting your search or filters</p>
+            </div>
+        </section>
+    </div>
+
+    <!-- Client Detail Modal -->
+    <div class="modal-overlay" id="client-modal">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h2>Client Details</h2>
+                <button class="modal-close" id="modal-close">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Populated by JavaScript -->
+            </div>
+
+            <div class="modal-footer" id="modal-footer">
+                <!-- Optional: Add buttons for lead status updates -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+         Admin AI Intelligence Assistant Widget
+         ========================================== -->
+    <div id="adra-ai-widget" class="adra-ai-widget">
+
+        <!-- Chat Panel — sits above the button in visual order -->
+        <div class="adra-ai-panel" id="adra-ai-panel" aria-hidden="true">
+            <!-- Header (drag handle) -->
+            <div class="adra-ai-panel-header" id="adra-ai-drag-handle">
+                <div class="adra-ai-panel-identity">
+                    <div class="adra-ai-panel-avatar">
+                        <svg viewBox="0 0 40 40" fill="none" width="40" height="40">
+                            <circle cx="20" cy="20" r="19" fill="#1e1b4b"/>
+                            <circle cx="20" cy="10" r="2.2" fill="#06b6d4"/>
+                            <circle cx="30" cy="16.5" r="1.9" fill="#9333ea"/>
+                            <circle cx="30" cy="26.5" r="1.9" fill="#f59e0b"/>
+                            <circle cx="20" cy="32" r="2.2" fill="#06b6d4"/>
+                            <circle cx="10" cy="26.5" r="1.9" fill="#9333ea"/>
+                            <circle cx="10" cy="16.5" r="1.9" fill="#f59e0b"/>
+                            <circle cx="20" cy="20" r="4" fill="#c084fc"/>
+                        </svg>
+                        <span class="adra-ai-online-dot"></span>
+                    </div>
+                    <div class="adra-ai-panel-info">
+                        <h3>Adra Intelligence</h3>
+                        <span class="adra-ai-status-text">
+                            <span class="status-dot"></span> Online &middot; Ready to analyze
+                        </span>
+                    </div>
+                </div>
+                <div class="adra-ai-panel-actions">
+                    <button class="adra-ai-clear-btn" id="adra-ai-clear" title="Clear conversation">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                            <path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                        </svg>
+                    </button>
+                    <button class="adra-ai-close-btn" id="adra-ai-close" aria-label="Close assistant">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Capability Pills -->
+            <div class="adra-ai-capabilities">
+                <span class="cap-pill">&#128202; Lead Analysis</span>
+                <span class="cap-pill">&#9889; Risk Scoring</span>
+                <span class="cap-pill">&#128196; Documents</span>
+                <span class="cap-pill">&#127942; Prioritization</span>
+            </div>
+
+            <!-- Messages -->
+            <div class="adra-ai-messages" id="adra-ai-messages">
+                <div class="adra-ai-msg adra-ai-msg--bot adra-ai-msg--welcome">
+                    <div class="adra-ai-msg-avatar">
+                        <svg viewBox="0 0 28 28" fill="none" width="28" height="28">
+                            <circle cx="14" cy="14" r="13" fill="#1e1b4b"/>
+                            <circle cx="14" cy="7" r="1.6" fill="#06b6d4"/>
+                            <circle cx="21" cy="11.5" r="1.4" fill="#9333ea"/>
+                            <circle cx="21" cy="18.5" r="1.4" fill="#f59e0b"/>
+                            <circle cx="14" cy="22.5" r="1.6" fill="#06b6d4"/>
+                            <circle cx="7" cy="18.5" r="1.4" fill="#9333ea"/>
+                            <circle cx="7" cy="11.5" r="1.4" fill="#f59e0b"/>
+                            <circle cx="14" cy="14" r="3" fill="#c084fc"/>
+                        </svg>
+                    </div>
+                    <div class="adra-ai-msg-content">
+                        <div class="adra-ai-bubble">
+                            <p>&#128075; Hello! I'm <strong>Adra Intelligence</strong> &mdash; your internal AI analyst.</p>
+                            <p style="margin-top:8px;opacity:0.85;">I can analyze leads, score risks, prioritize deals, and search documents.</p>
+                        </div>
+                        <div class="adra-ai-quick-prompts" id="adra-quick-prompts">
+                            <button class="adra-quick-btn" data-prompt="Show me the top 5 leads to prioritize right now">&#127942; Top Leads</button>
+                            <button class="adra-quick-btn" data-prompt="Analyze risk across all current deals">&#9889; Risk Analysis</button>
+                            <button class="adra-quick-btn" data-prompt="What are the current lead pipeline trends?">&#128202; Trends</button>
+                            <button class="adra-quick-btn" data-prompt="List all high urgency leads with budget over 50000">&#128293; High Priority</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Typing Indicator -->
+            <div class="adra-ai-typing" id="adra-ai-typing" style="display:none;">
+                <div class="adra-ai-typing-avatar">
+                    <svg viewBox="0 0 20 20" fill="none" width="20" height="20">
+                        <circle cx="10" cy="10" r="9" fill="#1e1b4b"/>
+                        <circle cx="10" cy="10" r="2.5" fill="#c084fc"/>
+                    </svg>
+                </div>
+                <div class="adra-ai-typing-dots"><span></span><span></span><span></span></div>
+                <span class="adra-ai-typing-label">Analyzing...</span>
+            </div>
+
+            <!-- Input -->
+            <div class="adra-ai-input-area">
+                <div class="adra-ai-input-wrap">
+                    <textarea id="adra-ai-input" class="adra-ai-input"
+                        placeholder="Ask about leads, risks, documents..."
+                        rows="1" aria-label="Message to AI assistant"></textarea>
+                    <button class="adra-ai-send-btn" id="adra-ai-send" aria-label="Send message">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="22" y1="2" x2="11" y2="13"/>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                        </svg>
+                    </button>
+                </div>
+                <p class="adra-ai-footer-note">Adra Intelligence &middot; Read-only analyst &middot; Powered by Gemini</p>
+            </div>
+        </div>
+
+        <!-- Floating Toggle Button -->
+        <button id="adra-ai-toggle" class="adra-ai-toggle" aria-label="Open AI Intelligence Assistant">
+            <div class="adra-ai-icon-wrap">
+                <div class="ai-orbit ai-orbit-1"></div>
+                <div class="ai-orbit ai-orbit-2"></div>
+                <svg class="ai-core-svg" viewBox="0 0 64 64" fill="none">
+                    <circle cx="32" cy="32" r="30" fill="#1e1b4b" opacity="0.95"/>
+                    <circle cx="32" cy="16" r="3.5" fill="#06b6d4"/>
+                    <circle cx="48" cy="26" r="3"   fill="#9333ea"/>
+                    <circle cx="48" cy="42" r="3"   fill="#f59e0b"/>
+                    <circle cx="32" cy="50" r="3.5" fill="#06b6d4"/>
+                    <circle cx="16" cy="42" r="3"   fill="#9333ea"/>
+                    <circle cx="16" cy="26" r="3"   fill="#f59e0b"/>
+                    <circle cx="32" cy="32" r="6"   fill="#c084fc"/>
+                    <line x1="32" y1="19.5" x2="32" y2="26" stroke="#06b6d4" stroke-width="1.2" stroke-opacity="0.8"/>
+                    <line x1="45.4" y1="27.5" x2="38" y2="30" stroke="#9333ea" stroke-width="1.2" stroke-opacity="0.8"/>
+                    <line x1="45.4" y1="40.5" x2="38" y2="34" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.8"/>
+                    <line x1="32" y1="46.5" x2="32" y2="38" stroke="#06b6d4" stroke-width="1.2" stroke-opacity="0.8"/>
+                    <line x1="18.6" y1="40.5" x2="26" y2="34" stroke="#9333ea" stroke-width="1.2" stroke-opacity="0.8"/>
+                    <line x1="18.6" y1="27.5" x2="26" y2="30" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.8"/>
+                    <line x1="32" y1="16" x2="48" y2="26" stroke="#06b6d4" stroke-width="0.8" stroke-opacity="0.4"/>
+                    <line x1="48" y1="26" x2="48" y2="42" stroke="#9333ea" stroke-width="0.8" stroke-opacity="0.4"/>
+                    <line x1="48" y1="42" x2="32" y2="50" stroke="#f59e0b" stroke-width="0.8" stroke-opacity="0.4"/>
+                    <line x1="32" y1="50" x2="16" y2="42" stroke="#06b6d4" stroke-width="0.8" stroke-opacity="0.4"/>
+                    <line x1="16" y1="42" x2="16" y2="26" stroke="#9333ea" stroke-width="0.8" stroke-opacity="0.4"/>
+                    <line x1="16" y1="26" x2="32" y2="16" stroke="#f59e0b" stroke-width="0.8" stroke-opacity="0.4"/>
+                </svg>
+                <span class="ai-pulse ai-pulse-1"></span>
+                <span class="ai-pulse ai-pulse-2"></span>
+            </div>
+            <span class="adra-ai-badge" id="adra-ai-badge" style="display:none;">1</span>
+        </button>
+
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
