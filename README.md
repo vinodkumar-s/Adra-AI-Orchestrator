@@ -64,6 +64,10 @@ Your internal assistant for analyzing data and managing risks directly within th
 The sleek, glassmorphism-inspired chat interface for end-users.
 ![Chat Interface](assets/chat_interface.png)
 
+### 7. WhatsApp Conversational Lead Capture
+A professional, automated consultant that engages users, collects contact info, and processes project proposals.
+![WhatsApp Chat](assets/whatsapp_chat.png)
+
 ---
 
 ## 🚀 Getting Started
