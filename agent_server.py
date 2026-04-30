@@ -16,6 +16,11 @@ from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+import site
+import io
+
+# Ensure user-level site-packages are in path for Pypdf etc.
+sys.path.append(site.getusersitepackages())
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_tavily import TavilySearch
@@ -43,10 +48,22 @@ async def get_index():
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# -------- LLM --------
+# -------- LLM CONFIGURATION --------
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+if not GOOGLE_API_KEY or "your_google_api_key_here" in GOOGLE_API_KEY:
+    print("\n" + "="*70)
+    print("FATAL ERROR: GOOGLE_API_KEY placeholder detected or missing from .env")
+    print("Please follow these steps:")
+    print("1. Open the .env file in the current directory.")
+    print("2. Replace 'your_google_api_key_here' with a valid Gemini API key.")
+    print("3. Restart the server.")
+    print("="*70 + "\n")
+    sys.exit(1)
+
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash", 
-    google_api_key=os.getenv("GOOGLE_API_KEY"),
+    google_api_key=GOOGLE_API_KEY,
     temperature=0
 )
 
@@ -176,12 +193,12 @@ Format for factual replies:
 Source: [URL from tool]
 
 Tool usage rules:
-- get_stock_price(symbol)  → for ANY stock questions.
-- get_weather(location)    → for weather questions.
-- get_world_time(city)     → for time questions.
-- calculator(expression)   → for math.
-- wikipedia_search(query)  → for biographical, historical, or company facts.
-- tavily_search(query)     → for news and general web searches.
+- get_stock_price(symbol)  \u2192 for ANY stock questions.
+- get_weather(location)    \u2192 for weather questions.
+- get_world_time(city)     \u2192 for time questions.
+- calculator(expression)   \u2192 for math.
+- wikipedia_search(query)  \u2192 for biographical, historical, or company facts.
+- tavily_search(query)     \u2192 for news and general web searches.
 """
     )
 
@@ -249,7 +266,7 @@ async def forward_to_n8n(message: str, session_id: str):
         return f"I'm having trouble reaching the lead system. Error: {str(e)}"
 
 # Define URL from environment variable
-CONFIG_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://vinod2.app.n8n.cloud/webhook/chatbot")
+CONFIG_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://vinod3.app.n8n.cloud/webhook/chatbot")
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
@@ -314,16 +331,139 @@ async def chat(request: ChatRequest):
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
-# Serves all other static files (css, js, images) from the current folder
-app.mount("/", StaticFiles(directory=os.path.dirname(__file__)), name="static")
+@app.post("/expert-insights")
+async def get_expert_insights(request: dict):
+    """Provide professional AI analysis with high tolerance for data variants."""
+    print(f"DEBUG: Received Insight Request: {request}")
+    
+    idea = request.get("idea") or "No idea provided"
+    budget = request.get("budget") or "No budget provided"
+    context = request.get("context") or {}
+
+    system_prompt = """You are the 'Adra Expert', a high-level digital product strategist for Adra AI agency. 
+Your goal is to provide a candid, professional, and strategic evaluation of a potential client's project idea relative to their budget.
+
+CONTENT GUIDELINES:
+1. TONALITY: Professional, insightful, and slightly bold. You are an authority in Tech & ROI.
+2. FEASIBILITY: Be honest. If a complex app (like a Social Network or Marketplace) has a tiny budget (e.g. < $5k), explain the 'Budget Gap' and suggest an MVP (Minimum Viable Product).
+3. STRATEGY: Offer 1-2 practical next steps (e.g., 'Focus on core feature X first' or 'Consider No-Code for v1').
+4. FORMAT: Use brief paragraphs. Keep it under 150 words.
+5. NO FLUFF: Start directly with the analysis. Use bold text for emphasis.
+
+Input Idea: {idea}
+Input Budget: {budget}
+Additional Context: {context}
+
+Response strictly as the Adra Expert:"""
+
+    try:
+        prompt = system_prompt.format(
+            idea=idea, 
+            budget=budget, 
+            context=json.dumps(context)
+        )
+        
+        response = await llm.ainvoke(prompt)
+        return {"insight": response.content}
+    except Exception as e:
+        print(f"Expert Insight Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/deepgram-token")
+async def deepgram_token():
+    """Return the Deepgram API key for browser-based STT connections."""
+    api_key = os.getenv("DEEPGRAM_API_KEY")
+
+    if not api_key:
+        raise HTTPException(status_code=500, detail="DEEPGRAM_API_KEY not configured in .env")
+
+    return {"key": api_key}
+
+async def extract_text_from_pdf(url: str):
+    """Download and extract text from a PDF URL using httpx."""
+    if not url:
+        return "[Error: URL is empty]"
+    
+    url = url.replace('\n', '').replace('\r', '').strip()
+    
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        print("CRITICAL: pypdf not found in this environment.")
+        return "[System Error: PDF library not installed on server]"
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url, timeout=30.0)
+            response.raise_for_status()
+            
+            # Read PDF from bytes
+            pdf_file = io.BytesIO(response.content)
+            reader = PdfReader(pdf_file)
+            
+            text = ""
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
+            
+            return text if text.strip() else "[No readable text found in this PDF]"
+    except Exception as e:
+        print(f"PDF Extraction Error: {e}")
+        return f"[Error reading PDF: {str(e)}]"
+
+@app.post("/analyze-document")
+async def analyze_document(request: dict):
+    """A specialized endpoint for deep-diving into a single PDF document."""
+    file_url = request.get("url")
+    file_name = request.get("name", "Document")
+    
+    if not file_url:
+        raise HTTPException(status_code=400, detail="Missing file URL")
+
+    print(f"Action: AI Document Analysis on {file_name}")
+    
+    # 1. Extract Text
+    content = await extract_text_from_pdf(file_url)
+    
+    # 2. AI Prompt
+    prompt = f"""You are the 'Adra Elite AI Analyst', a high-level digital product strategist for Adra AI agency. 
+Your task is to provide a technical and strategic evaluation of the provided project document.
+
+DOCUMENT NAME: {file_name}
+DOCUMENT CONTENT:
+---
+{content[:8000]}
+---
+
+ANALYSIS GUIDELINES:
+1. **STRATEGIC OVERVIEW**: What is the core business value of this project? (Be concise and bold).
+2. **TECHNICAL VIABILITY**: Based on these requirements, is this feasible with modern AI/Web standards? Mention 1-2 complexity risks.
+3. **FEASIBILITY & ROI**: Evaluate if the project seems like a high-impact investment or a high-maintenance experiment.
+4. **ELITE VERDICT**: Give a final professional 'Go/No-Go' recommendation on if this document is ready for development or needs more clarity.
+
+TONE: Candid, professional, and authoritative. Start directly with the analysis. Use bold text for emphasis.
+"""
+
+    try:
+        response = await llm.ainvoke(prompt)
+        return {"analysis": response.content}
+    except Exception as e:
+        print(f"Document Analysis Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/config")
 async def get_config():
     return {
+        "version": "1.1-insights",
         "SUPABASE_URL": os.getenv("SUPABASE_URL"),
         "SUPABASE_ANON_KEY": os.getenv("SUPABASE_ANON_KEY"),
         "ADMIN_AI_WEBHOOK_URL": os.getenv("ADMIN_AI_WEBHOOK_URL")
     }
+
+# Serves all other static files (css, js, images) from the current folder
+app.mount("/", StaticFiles(directory=os.path.dirname(__file__)), name="static")
 
 if __name__ == "__main__":
     import uvicorn

@@ -10,7 +10,7 @@
 // ===================================
 const CONFIG = {
     // Current n8n Webhook URL
-    WEBHOOK_URL: 'https://vinod2.app.n8n.cloud/webhook/chatbot',
+    WEBHOOK_URL: 'https://vinod3.app.n8n.cloud/webhook/chatbot',
 
     // Python Agent URL
     PYTHON_AGENT_URL: 'http://localhost:8000/chat',
@@ -19,7 +19,7 @@ const CONFIG = {
     QUALIFICATION_FIELDS: [
         'name', 'email', 'company', 'product_idea',
         'budget', 'timeline', 'market', 'kpi',
-        'expectations', 'stage', 'urgency'
+        'expectations', 'stage', 'urgency', 'project_requirements'
     ]
 };
 
@@ -30,7 +30,9 @@ const state = {
     sessionId: localStorage.getItem('adra_session_id') || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     capturedFields: new Set(),
     isProcessing: false,
-    selectedFile: null
+    selectedFile: null,
+    voiceEnabled: false,
+    micLocked: false // ← NEW: Prevent echo/feedback
 };
 
 // PERSIST SESSION ID
@@ -138,6 +140,9 @@ const UI = {
         wrapper.appendChild(timestamp);
         messageDiv.appendChild(wrapper);
         elements.messagesArea.appendChild(messageDiv);
+
+        // SECURITY: Ensure mic stops immediately if an AI message is appearing
+        if (isAI) VoiceService.stop();
 
         // Auto-scroll
         elements.messagesArea.scrollTop = elements.messagesArea.scrollHeight;
@@ -439,7 +444,7 @@ async function apiCallStream(data, onChunk) {
     } catch (error) {
         console.error('API Stream Error:', error);
         onChunk(` [Stream Error: ${error.message}]`);
-7    }
+   }
 }
 
 // ===================================
@@ -476,6 +481,8 @@ function triggerHeuristicInsight(aiResponse, previousInput) {
         UI.triggerInsightAnimation('stage');
     } else if (text.includes("urgency") || text.includes("priority") || text.includes("how fast")) {
         UI.triggerInsightAnimation('urgency');
+    } else if (text.includes("requirement") || text.includes("specification") || text.includes("feature list")) {
+        UI.triggerInsightAnimation('project_requirements');
     }
 }
 
@@ -514,7 +521,13 @@ async function handleSend() {
     const text = elements.messageInput.value.trim();
     const file = state.selectedFile;
 
-    if ((!text && !file) || state.isProcessing) return;
+    // GUARD: Prevent sending if mic is locked or bot is thinking
+    if (state.micLocked || state.isProcessing) return;
+    if (!text && !file) return;
+
+    // FORCE LOCK: Immediately stop the mic and lock it
+    state.micLocked = true;
+    VoiceService.stop();
 
     // 1. Update UI
     if (text) UI.addMessage(text, false);
@@ -571,8 +584,12 @@ async function handleSend() {
     try {
         if (isGeneralQuery) {
             console.log('Dispatching request to General bot (Streaming).');
-            // Remove loading instantly for stream
-            UI.setLoading(false); 
+            
+            // SECURITY: Stop mic immediately when bot starts responding
+            VoiceService.stop();
+            
+            // Keep loading/processing active throughout the entire stream 
+            UI.setLoading(true); 
             
             // Create an empty message bubble immediately
             const streamBubble = UI.addMessage("", true);
@@ -580,21 +597,32 @@ async function handleSend() {
             let accumulatedText = "";
 
             await apiCallStream(payload, (chunk) => {
-                accumulatedText += chunk;
-                // Dynamically update the markdown render as chunks arrive
-                contentDiv.innerHTML = MarkdownRenderer.render(accumulatedText);
-                // Keep scroll at bottom
-                elements.messagesArea.scrollTop = elements.messagesArea.scrollHeight;
-            });
-            
-            // Once done, check if we need to show Quick Replies (fallback heuristic)
-            parseResponseForUI(accumulatedText);
-            
-            // Exit early since we've fully rendered the stream organically
-            return;
+    accumulatedText += chunk;
+    contentDiv.innerHTML = MarkdownRenderer.render(accumulatedText);
+    elements.messagesArea.scrollTop = elements.messagesArea.scrollHeight;
+});
+
+parseResponseForUI(accumulatedText);
+const isError = accumulatedText.includes('Backend Error') ||
+                accumulatedText.includes('RESOURCE_EXHAUSTED') ||
+                accumulatedText.includes('Stream Error') ||
+                accumulatedText.includes('quota');
+if (!isError && state.voiceEnabled) {
+    // Speak first, then setLoading(false) in onDone below
+    TTSService.speak(accumulatedText, () => {
+        UI.setLoading(false);
+        state.micLocked = false; 
+    });
+} else {
+    UI.setLoading(false);
+    state.micLocked = false; 
+}
+return;
             
         } else {
             console.log('Dispatching request to Lead bot only.');
+            VoiceService.stop();
+            UI.setLoading(true); // Ensure loading is set
             responseData = await apiCall(payload, false);
         }
     } catch (error) {
@@ -626,6 +654,15 @@ async function handleSend() {
 
         // Process AI text for custom UI elements (appended after the bubble)
         parseResponseForUI(aiText);
+        if (state.voiceEnabled) {
+            TTSService.speak(aiText, () => {
+                UI.setLoading(false);
+                state.micLocked = false; 
+            });
+        } else {
+            UI.setLoading(false);
+            state.micLocked = false; 
+        }
 
         // Trigger Insight Animations via Heuristics for Lead Bot
         if (!isGeneral) {
@@ -725,61 +762,111 @@ const GestureController = {
 };
 
 // ===================================
-// Real-Time Voice-to-Text (Speech API)
+// Real-Time Voice-to-Text (Deepgram Direct — via Secure Token)
 // ===================================
 const VoiceService = {
-    recognition: null,
+    socket: null,
+    recorder: null,
+    stream: null,
     isListening: false,
+    accumulatedTranscript: '', // Holds confirmed final words
 
-    init() {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            console.warn('Speech Recognition not supported in this browser.');
-            elements.micBtn.style.display = 'none';
-            return;
-        }
+    async init() {
+        // Nothing to init — we start on demand
+    },
 
-        this.recognition = new SpeechRecognition();
-        this.recognition.continuous = false; // Stop automatically when user pauses
-        this.recognition.interimResults = true; // Show words as they are spoken
-        this.recognition.lang = 'en-US';
+    async start() {
+        if (this.isListening) return;
 
-        this.recognition.onstart = () => {
-            this.isListening = true;
-            elements.micBtn.classList.add('recording');
-            elements.messageInput.placeholder = 'Listening...';
-        };
+        try {
+            // 1. Request microphone access
+            this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-        this.recognition.onresult = (event) => {
-            let interimTranscript = '';
-            let finalTranscript = '';
+            // 2. Fetch a short-lived token from our secure backend
+            const tokenRes = await fetch('/deepgram-token');
+            if (!tokenRes.ok) throw new Error('Failed to get Deepgram token');
+            const { key } = await tokenRes.json();
 
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) {
-                    finalTranscript += event.results[i][0].transcript;
+            // 3. Connect DIRECTLY to Deepgram — zero middleman!
+            const dgUrl = `wss://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&interim_results=true&endpointing=300`;
+            this.socket = new WebSocket(dgUrl, ['token', key]);
+
+            this.socket.onopen = () => {
+                console.log('✅ Connected directly to Deepgram');
+                this.isListening = true;
+                this.accumulatedTranscript = '';
+                elements.micBtn.classList.add('recording');
+
+                // 4. Start streaming audio in small 100ms chunks (minimum latency)
+                this.recorder = new MediaRecorder(this.stream, { mimeType: 'audio/webm;codecs=opus' });
+                this.recorder.ondataavailable = (e) => {
+                    if (e.data.size > 0 && this.socket.readyState === WebSocket.OPEN) {
+                        this.socket.send(e.data);
+                    }
+                };
+                this.recorder.start(100);
+            };
+
+            this.socket.onmessage = (msg) => {
+                const data = JSON.parse(msg.data);
+                const alt = data?.channel?.alternatives?.[0];
+                if (!alt) return;
+
+                const transcript = alt.transcript;
+                if (!transcript) return;
+
+                if (data.is_final) {
+                    // Confirmed words — lock them in
+                    this.accumulatedTranscript += (this.accumulatedTranscript ? ' ' : '') + transcript;
+                    elements.messageInput.value = this.accumulatedTranscript;
                 } else {
-                    interimTranscript += event.results[i][0].transcript;
+                    // Interim: show accumulated + current interim preview
+                    const preview = this.accumulatedTranscript
+                        ? `${this.accumulatedTranscript} ${transcript}`
+                        : transcript;
+                    elements.messageInput.value = preview;
                 }
-            }
+            };
 
-            // Update input field in real-time
-            if (finalTranscript) {
-                elements.messageInput.value = finalTranscript;
-            } else if (interimTranscript) {
-                elements.messageInput.value = interimTranscript;
-            }
-        };
+            this.socket.onclose = () => {
+                console.log('Deepgram connection closed');
+                this._cleanup();
+            };
 
-        this.recognition.onend = () => {
-            this.isListening = false;
-            elements.micBtn.classList.remove('recording');
-            elements.messageInput.placeholder = "Tell us what you're building…";
-        };
+            this.socket.onerror = (err) => {
+                console.error('Deepgram WebSocket error:', err);
+                this._cleanup();
+            };
 
-        this.recognition.onerror = (event) => {
-            console.error('Speech recognition error:', event.error);
-            this.stop();
-        };
+        } catch (err) {
+            console.error('VoiceService Error:', err);
+            this._cleanup();
+            alert('Could not start voice input: ' + err.message);
+        }
+    },
+
+    stop() {
+        if (!this.isListening && !this.socket) return;
+        // Signal Deepgram we're done, then close
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({ type: 'CloseStream' }));
+            setTimeout(() => this.socket.close(), 300);
+        }
+        this._cleanup();
+    },
+
+    _cleanup() {
+        this.isListening = false;
+        elements.micBtn.classList.remove('recording');
+
+        if (this.recorder && this.recorder.state !== 'inactive') {
+            this.recorder.stop();
+        }
+        if (this.stream) {
+            this.stream.getTracks().forEach(t => t.stop());
+            this.stream = null;
+        }
+        this.recorder = null;
     },
 
     toggle() {
@@ -787,23 +874,6 @@ const VoiceService = {
             this.stop();
         } else {
             this.start();
-        }
-    },
-
-    start() {
-        if (!this.recognition) this.init();
-        if (this.recognition) {
-            try {
-                this.recognition.start();
-            } catch (e) {
-                console.error('Failed to start recognition:', e);
-            }
-        }
-    },
-
-    stop() {
-        if (this.recognition) {
-            this.recognition.stop();
         }
     }
 };
@@ -876,9 +946,16 @@ function init() {
     new ParticleSystem('particle-canvas-chat');
     GestureController.init();
     VoiceService.init();
+    TTSService.init();
+    LiveMode.init();
 
     // Event Listeners
-    elements.continueBtn.addEventListener('click', UI.transitionToChat);
+    elements.continueBtn.addEventListener('click', () => {
+    // Unlock audio context on first user gesture
+    const unlock = new Audio();
+    unlock.play().catch(() => {});
+    UI.transitionToChat();
+});
     elements.sendBtn.addEventListener('click', handleSend);
     elements.micBtn.addEventListener('click', () => VoiceService.toggle());
     elements.messageInput.addEventListener('keypress', (e) => {
@@ -1112,6 +1189,210 @@ const LinkService = {
     }
 };
 
+// ===================================
+// Live Conversation Mode
+// ===================================
+const LiveMode = {
+    active: false,
+    btn: null,
+
+    init() {
+        this.btn = document.createElement('button');
+        this.btn.id = 'live-btn';
+        this.btn.className = 'live-btn magnetic-btn';
+        this.btn.title = 'Live Conversation Mode';
+        this.btn.innerHTML = `
+            <span class="live-dot"></span>
+            <span class="live-label">Live</span>
+        `;
+        elements.micBtn.parentNode.insertBefore(this.btn, elements.micBtn);
+        this.btn.addEventListener('click', () => this.toggle());
+    },
+
+    toggle() {
+        this.active ? this.stop() : this.start();
+    },
+
+    start() {
+    this.active = true;
+    state.voiceEnabled = true;   // ← ADD
+    this.btn.classList.add('live-active');
+    elements.micBtn.disabled = true;
+    elements.micBtn.style.opacity = '0.3';
+    TTSService.speak("Live mode activated. I'm listening.", () => {
+        this.listen();
+    });
+},
+
+stop() {
+    this.active = false;
+    state.voiceEnabled = false;  // ← ADD
+    this.btn.classList.remove('live-active');
+    elements.micBtn.disabled = false;
+    elements.micBtn.style.opacity = '1';
+    VoiceService.stop();
+    TTSService.stop();
+    elements.messageInput.placeholder = "Tell us what you're building…";
+},
+
+    listen() {
+        if (!this.active) return;
+        elements.messageInput.placeholder = 'Listening...';
+        VoiceService.start();
+    },
+
+    onBotDone() {
+        if (!this.active) return;
+        
+        // Safety buffer: wait 2 seconds after bot finishes before unlocking mic
+        setTimeout(() => {
+            state.micLocked = false;
+            if (this.active) this.listen();
+        }, 2000);
+    }
+    
+};
+
+
+// ===================================
+// Text-to-Speech Service (ElevenLabs)
+// ===================================
+const TTSService = {
+    isSpeaking: false,
+    currentAudio: null,
+
+    init() {
+        // Prepare speech synthesis voices for fallback
+        if (window.speechSynthesis) {
+            console.log('TTSService ready (Web Speech API available for fallback)');
+            // Pre-fetch voices
+            window.speechSynthesis.getVoices();
+        } else {
+            console.warn('Web Speech API (fallback) not supported in this browser.');
+        }
+    },
+
+    async speak(text, onDone = null) {
+        // Force cleanup function
+        const cleanup = () => {
+            this.isSpeaking = false;
+            elements.micBtn.title = 'Voice Input';
+            if (onDone) onDone();
+            
+            // If NOT in Live mode, we unlock immediately. 
+            // If in Live mode, onBotDone handles the 2s buffer.
+            if (LiveMode?.active) {
+                LiveMode.onBotDone();
+            } else {
+                state.micLocked = false; 
+            }
+        };
+
+        if (!text?.trim()) {
+            cleanup();
+            return;
+        }
+
+        // CRITICAL: Stop microphone immediately before bot starts speaking
+        VoiceService.stop();
+        this.isSpeaking = true;
+
+        // Stop anything currently playing
+        this.stop();
+
+        try {
+            elements.micBtn.title = 'Bot is speaking…';
+
+            const response = await fetch('/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.warn('TTS backend error (Status ' + response.status + '):', errorData.detail || response.statusText);
+                console.log('Falling back to browser-native Text-to-Speech...');
+                this.speakWithBrowser(text, onDone);
+                return;
+            }
+
+            const audioBlob = await response.blob();
+            const audioUrl  = URL.createObjectURL(audioBlob);
+            this.currentAudio = new Audio(audioUrl);
+
+            this.currentAudio.onended = () => {
+                URL.revokeObjectURL(audioUrl);   // free memory
+                cleanup();
+            };
+
+            this.currentAudio.onerror = (e) => {
+                console.error('Audio playback error:', e);
+                this.speakWithBrowser(text, onDone);
+            };
+
+            await this.currentAudio.play();
+
+        } catch (err) {
+            console.error('TTSService Fetch error:', err);
+            this.speakWithBrowser(text, onDone);
+        }
+    },
+
+    /**
+     * FALLBACK: Web Speech API (Browser-native)
+     */
+    speakWithBrowser(text, onDone) {
+        if (!window.speechSynthesis) {
+            console.error('Browser does not support SpeechSynthesis');
+            if (onDone) onDone();
+            if (LiveMode?.active) LiveMode.onBotDone();
+            return;
+        }
+
+        // Cancel any pending speech
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        // Find a professional-sounding voice if possible
+        const voices = window.speechSynthesis.getVoices();
+        const preferredVoice = voices.find(v => (v.name.includes('Google') || v.name.includes('Enhanced')) && v.lang === 'en-US') 
+                             || voices.find(v => v.lang.startsWith('en')) 
+                             || voices[0];
+        
+        if (preferredVoice) utterance.voice = preferredVoice;
+        
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+
+        utterance.onend = () => {
+            this.isSpeaking = false;
+            if (onDone) onDone();
+            if (LiveMode?.active) LiveMode.onBotDone();
+        };
+
+        utterance.onerror = (e) => {
+            console.error('SpeechSynthesis Error:', e);
+            this.isSpeaking = false;
+            if (onDone) onDone();
+            if (LiveMode?.active) LiveMode.onBotDone();
+        };
+
+        this.isSpeaking = true;
+        window.speechSynthesis.speak(utterance);
+    },
+
+    stop() {
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+            this.currentAudio.src = '';
+            this.currentAudio = null;
+        }
+        this.isSpeaking = false;
+    }
+};
 // ===================================
 // Lightweight Markdown Renderer
 // ===================================

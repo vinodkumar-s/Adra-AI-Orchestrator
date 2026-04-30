@@ -8,22 +8,28 @@ const CONFIG = {
 
     // Toggle between Supabase and Legacy N8N
     USE_SUPABASE: true,
-    N8N_WEBHOOK_URL: 'https://vinod2.app.n8n.cloud/webhook/b3b0a7fe-5eef-4449-b480-7ef11c51ae63/chat',
+    N8N_WEBHOOK_URL: 'https://vinod3.app.n8n.cloud/webhook/chatbot',
 
     FIELDS: [
         'name', 'email', 'company', 'product_idea',
         'budget', 'timeline', 'market', 'kpi',
-        'expectations', 'stage', 'urgency'
+        'expectations', 'stage', 'urgency', 'project_requirements'
     ],
-    STORAGE_KEY: 'adra_clients_data'
+    STORAGE_KEY: 'adra_clients_data',
+    CONVERSATION_API: 'https://vinod3.app.n8n.cloud/webhook/admin/conversation'
 };
 
 // Initialize Supabase Client
 let supabaseClient = null;
 
 async function initSupabase() {
+    if (window.location.protocol === 'file:') {
+        console.error('ERROR: Dashboard opened as file. Use http://localhost:8000/admin.html');
+        alert('⚠️ IMPORTANT: You are viewing this dashboard as a local file. The AI Expert and Database connection will NOT work. \n\nPlease open http://localhost:8000/admin.html instead.');
+    }
+
     try {
-        const resp = await fetch('http://localhost:8000/config');
+        const resp = await fetch('/config');
         const config = await resp.json();
         CONFIG.SUPABASE_URL = config.SUPABASE_URL;
         CONFIG.SUPABASE_ANON_KEY = config.SUPABASE_ANON_KEY;
@@ -32,7 +38,7 @@ async function initSupabase() {
             supabaseClient = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
             console.log('✅ Supabase initialized successfully');
         }
-        
+
         // Also update the widget's webhook if it exists
         if (config.ADMIN_AI_WEBHOOK_URL) {
             window.ADRA_AI_WEBHOOK_URL = config.ADMIN_AI_WEBHOOK_URL;
@@ -54,7 +60,12 @@ const state = {
         search: '',
         status: 'all',
         completion: 'all'
-    }
+    },
+    // Notification System State
+    activityFeed: [],
+    activityBadge: 0,
+    currentTab: 'details',
+    selectedProjectId: null
 };
 
 // ===================================
@@ -85,7 +96,15 @@ const elements = {
     // Modal
     modal: document.getElementById('client-modal'),
     modalBody: document.getElementById('modal-body'),
-    modalClose: document.getElementById('modal-close')
+    modalClose: document.getElementById('modal-close'),
+
+    // Notification Elements
+    activityToggle: document.getElementById('activity-toggle'),
+    activityBadge: document.getElementById('activity-badge'),
+    activitySidebar: document.getElementById('activity-sidebar'),
+    activityList: document.getElementById('activity-list'),
+    closeActivity: document.getElementById('close-activity'),
+    activityPills: document.querySelectorAll('.activity-pill')
 };
 
 // ===================================
@@ -174,6 +193,160 @@ function generateMockData() {
 }
 
 // ===================================
+// Activity Notification Engine
+// (Derives live insights from lead data)
+// ===================================
+function generateActivityFeed() {
+    const events = [];
+    const now = new Date();
+
+    state.clients.forEach(client => {
+        const lastActive = new Date(client.last_active);
+        const createdAt = new Date(client.created_at);
+        const diffMs = now - lastActive;
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const createdDiffDays = Math.floor((now - createdAt) / (1000 * 60 * 60 * 24));
+
+        const name = client.qualification_data.name || 'Unknown Lead';
+        const completion = client.completion_percentage;
+
+        // 1. New Sign-ups (Created in last 48 hours)
+        if (createdDiffDays <= 2) {
+            events.push({
+                id: `new-${client.client_id}`,
+                type: 'new',
+                title: `<b>${name}</b> just joined Adra!`,
+                timestamp: createdAt,
+                client: client,
+                icon: 'user-plus'
+            });
+        }
+
+        // 2. High Value Completion (Reached 70%+)
+        if (completion >= 70 && createdDiffDays <= 7) {
+            events.push({
+                id: `milestone-${client.client_id}`,
+                type: 'milestone',
+                title: `<b>${name}</b> reached <b>${completion}%</b> completion.`,
+                timestamp: lastActive,
+                client: client,
+                icon: 'award'
+            });
+        }
+
+        // 3. Significant Progress
+        if (completion >= 30 && completion < 70 && createdDiffDays <= 5) {
+            events.push({
+                id: `progress-${client.client_id}`,
+                type: 'milestone',
+                title: `<b>${name}</b> is onboarding (<b>${completion}%</b>)`,
+                timestamp: lastActive,
+                client: client,
+                icon: 'trending-up'
+            });
+        }
+
+        // 4. Inactivity Alerts
+        if (diffDays >= 5 && completion < 100) {
+            events.push({
+                id: `alert-${client.client_id}`,
+                type: 'alert',
+                title: `<b>${name}</b> has been inactive for <b>${diffDays} days</b>.`,
+                timestamp: lastActive,
+                client: client,
+                icon: 'alert-circle'
+            });
+        }
+    });
+
+    state.activityFeed = events.sort((a, b) => b.timestamp - a.timestamp);
+    state.activityBadge = Math.min(state.activityFeed.length, 99);
+    updateActivityBadge();
+}
+
+function updateActivityBadge() {
+    if (state.activityBadge > 0) {
+        elements.activityBadge.textContent = state.activityBadge;
+        elements.activityBadge.style.display = 'flex';
+    } else {
+        elements.activityBadge.style.display = 'none';
+    }
+}
+
+function renderActivityFeed(filterType = 'all') {
+    elements.activityList.innerHTML = '';
+
+    const filteredEvents = filterType === 'all'
+        ? state.activityFeed
+        : state.activityFeed.filter(e => e.type === filterType);
+
+    if (filteredEvents.length === 0) {
+        elements.activityList.innerHTML = `
+            <div class="activity-empty">
+                <p>No activity found for this category.</p>
+            </div>
+        `;
+        return;
+    }
+
+    filteredEvents.forEach(event => {
+        const item = document.createElement('div');
+        item.className = 'activity-item';
+        item.innerHTML = `
+            <div class="activity-icon ${event.type}">
+                ${getNotificationIcon(event.icon)}
+            </div>
+            <div class="activity-content">
+                <div class="activity-title">${event.title}</div>
+                <div class="activity-meta">
+                    <span>${formatTimeAgo(event.timestamp)}</span>
+                    <span class="activity-dot"></span>
+                    <span>${event.client.qualification_data.company || 'Private Lead'}</span>
+                </div>
+            </div>
+        `;
+
+        item.addEventListener('click', () => {
+            openClientModal(event.client);
+            toggleActivitySidebar(false);
+        });
+
+        elements.activityList.appendChild(item);
+    });
+}
+
+function getNotificationIcon(iconName) {
+    const icons = {
+        'user-plus': '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line></svg>',
+        'award': '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline></svg>',
+        'trending-up': '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>',
+        'alert-circle': '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
+    };
+    return icons[iconName] || icons['user-plus'];
+}
+
+function formatTimeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    const intervals = { 'day': 86400, 'hr': 3600, 'min': 60 };
+    for (let [name, val] of Object.entries(intervals)) {
+        const interval = Math.floor(seconds / val);
+        if (interval >= 1) return `${interval} ${name}${interval > 1 ? 's' : ''} ago`;
+    }
+    return 'Just now';
+}
+
+function toggleActivitySidebar(show) {
+    if (show) {
+        elements.activitySidebar.classList.add('active');
+        state.activityBadge = 0;
+        updateActivityBadge();
+        renderActivityFeed();
+    } else {
+        elements.activitySidebar.classList.remove('active');
+    }
+}
+
+// ===================================
 // Data Management
 // ===================================
 async function loadClientsData() {
@@ -185,6 +358,7 @@ async function loadClientsData() {
         loadFallbackData();
     }
     state.filteredClients = [...state.clients];
+    generateActivityFeed();
 }
 
 function loadFallbackData() {
@@ -214,26 +388,25 @@ async function fetchFromSupabase() {
             return;
         }
 
-        // 1. Fetch Leads
+        // 1. Fetch Leads with their Projects
         const { data: leads, error: leadsError } = await supabaseClient
             .from('leads')
-            .select('*');
+            .select('*, projects(*)');
 
         if (leadsError) {
             console.error('❌ Error fetching from "leads" table:', leadsError);
             throw leadsError;
         }
 
-        console.log('📊 Raw leads data from Supabase:', leads);
+        console.log('📊 Raw data from Supabase (leads + projects):', leads);
 
-        // 2. Map Files to Leads by email (New Logic: using JSON column)
+        // 2. Map Files to Leads by email
         state.fileUploads = {};
         if (leads) {
             leads.forEach(lead => {
                 const email = lead.email;
                 if (!email) return;
 
-                // Parse the JSON files column if it exists
                 if (lead.files) {
                     try {
                         let parsedFiles = typeof lead.files === 'string' ? JSON.parse(lead.files) : lead.files;
@@ -242,60 +415,90 @@ async function fetchFromSupabase() {
                         }
                     } catch (e) {
                         console.warn('⚠️ Error parsing files JSON for lead:', email, e);
-                        state.fileUploads[email] = [];
                     }
-                } else {
-                    state.fileUploads[email] = [];
                 }
+                if (!state.fileUploads[email]) state.fileUploads[email] = [];
             });
         }
 
         // 3. Transform leads to internal state format
         state.clients = (leads || []).map(lead => {
-            const completedFields = CONFIG.FIELDS.filter(field => lead[field] && lead[field] !== '').length;
+            // Sort projects by last_updated desc
+            const projects = (lead.projects || []).sort((a, b) => 
+                new Date(b.last_updated || b.created_at) - new Date(a.last_updated || a.created_at)
+            );
+
+            // Use the most recent project for overall lead status/progess calculations if available
+            const latestProject = projects[0] || {};
+            
+            const completedFields = CONFIG.FIELDS.filter(field => {
+                let val = (lead[field] && lead[field] !== '') ? lead[field] : latestProject[field];
+                
+                // Strict check for empty/placeholder values
+                if (val === undefined || val === null || val === '') return false;
+                
+                // Ignore common placeholders
+                const placeholders = ['not provided', 'n/a', 'none', 'unknown', 'null'];
+                if (typeof val === 'string' && placeholders.includes(val.toLowerCase().trim())) return false;
+                
+                if (Array.isArray(val)) return val.length > 0;
+                if (typeof val === 'object') return Object.keys(val).length > 0;
+                
+                return true;
+            }).length;
             const completionPercentage = Math.round((completedFields / CONFIG.FIELDS.length) * 100);
 
-            let status = lead.status || 'new';
-            if (!lead.status) {
-                if (completionPercentage >= 70) status = 'qualified';
-                else if (completionPercentage >= 30) status = 'in-progress';
+            // Debug first client's completion
+            if (leads.indexOf(lead) === 0) {
+                console.log(`🔍 DEBUG [${lead.email}]:`, {
+                    completed_count: completedFields,
+                    total_fields: CONFIG.FIELDS.length,
+                    percentage: completionPercentage,
+                    fields_analysis: CONFIG.FIELDS.map(f => ({
+                        field: f,
+                        val: lead[f] || latestProject[f],
+                        is_counted: CONFIG.FIELDS.filter(innerF => {
+                             let v = (lead[innerF] && lead[innerF] !== '') ? lead[innerF] : latestProject[innerF];
+                             if (v === undefined || v === null || v === '') return false;
+                             const p = ['not provided', 'n/a', 'none', 'unknown', 'null'];
+                             if (typeof v === 'string' && p.includes(v.toLowerCase().trim())) return false;
+                             if (Array.isArray(v)) return v.length > 0;
+                             if (typeof v === 'object') return Object.keys(v).length > 0;
+                             return true;
+                        }).includes(f)
+                    }))
+                });
             }
 
-            const createdAt = lead.created_at || new Date().toISOString();
-            const lastActive = lead.last_active || lead.updated_at || createdAt;
-
-            // Parse requirements JSON
-            let requirementsList = [];
-            if (lead.requirements) {
-                try {
-                    requirementsList = typeof lead.requirements === 'string' ? JSON.parse(lead.requirements) : lead.requirements;
-                } catch (e) {
-                    console.warn("Failed to parse requirements", e);
-                }
-            }
+            const createdAt = lead.created_at || latestProject.created_at || new Date().toISOString();
+            const lastActive = lead.last_updated || latestProject.last_updated || lead.updated_at || createdAt;
 
             return {
                 client_id: lead.client_id || lead.id || `client_${lead.email}`,
                 created_at: createdAt,
                 last_active: lastActive,
                 phone: lead.phone || '',
-                requirements: requirementsList,
+                projects: projects,
                 qualification_data: {
                     name: lead.name || '',
                     email: lead.email || '',
                     company: lead.company || '',
-                    product_idea: lead.product_idea || '',
-                    budget: lead.budget || '',
-                    timeline: lead.timeline || '',
-                    market: lead.market || '',
-                    kpi: lead.kpi || '',
-                    expectations: lead.expectations || '',
                     stage: lead.stage || '',
-                    urgency: lead.urgency || ''
+                    sessionid: lead.sessionid || '',
+                    // Keep compatibility with existing code that might expect these on qualification_data
+                    product_idea: latestProject.product_idea || '',
+                    budget: latestProject.budget || '',
+                    timeline: latestProject.timeline || '',
+                    market: latestProject.market || '',
+                    kpi: latestProject.kpi || '',
+                    expectations: latestProject.expectations || '',
+                    urgency: latestProject.urgency || '',
+                    project_insight: latestProject.project_insight || '',
+                    notification_sent: lead.notification_sent || ''
                 },
                 completed_fields: completedFields,
                 completion_percentage: completionPercentage,
-                status: status
+                status: lead.status || latestProject.status || 'new'
             };
         });
 
@@ -524,6 +727,14 @@ function renderTable() {
             </td>
             <td>${client.qualification_data.company || 'N/A'}</td>
             <td>
+                <div class="project-count-badge">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                    </svg>
+                    <span>${client.projects.length} ${client.projects.length === 1 ? 'project' : 'projects'}</span>
+                </div>
+            </td>
+            <td>
                 <div class="completion-bar">
                     ${renderProgressRing(client.completion_percentage)}
                     <span>${client.completion_percentage}%</span>
@@ -590,10 +801,85 @@ function renderProgressRing(percentage) {
 // Modal System
 // ===================================
 function openClientModal(client) {
-    const data = client.qualification_data;
+    state.currentTab = 'details'; // Reset to default
+    state.selectedProjectId = client.projects.length > 0 ? client.projects[0].id : null;
+    renderModalContent(client);
+    elements.modal.classList.add('active');
+    updateMsgCount(client);
+}
 
-    const fieldsHtml = CONFIG.FIELDS.map(field => {
-        const value = data[field];
+async function updateMsgCount(client) {
+    const badge = document.getElementById('msg-count-badge');
+    const email = client.qualification_data.email;
+    if (!badge) return;
+    
+    try {
+        const response = await fetch(`${CONFIG.CONVERSATION_API}?email=${encodeURIComponent(email)}`);
+        if (response.ok) {
+            const data = await response.json();
+            badge.textContent = data.total || (data.messages ? data.messages.length : 0);
+        }
+    } catch (e) {
+        badge.textContent = '0';
+    }
+}
+
+function renderModalContent(client) {
+    const data = client.qualification_data;
+    
+    // Header with Tabs
+    elements.modalBody.innerHTML = `
+        <div class="modal-tabs">
+            <button class="modal-tab ${state.currentTab === 'details' ? 'active' : ''}" id="tab-details">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="13 2 13 9 20 9"></polyline>
+                </svg>
+                Details
+            </button>
+            <button class="modal-tab ${state.currentTab === 'conversation' ? 'active' : ''}" id="tab-conversation">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                </svg>
+                Conversation <span class="tab-badge" id="msg-count-badge">...</span>
+            </button>
+        </div>
+        <div id="tab-content-container">
+            ${state.currentTab === 'details' ? renderDetailsTabContent(client) : renderConversationTabContent(client)}
+        </div>
+    `;
+
+    // Add Tab Listeners
+    document.getElementById('tab-details').addEventListener('click', () => {
+        state.currentTab = 'details';
+        renderModalContent(client);
+    });
+    
+    document.getElementById('tab-conversation').addEventListener('click', () => {
+        state.currentTab = 'conversation';
+        renderModalContent(client);
+        fetchConversation(client);
+    });
+
+    // Handle Project Selection Change
+    const projectSelector = document.getElementById('project-selector');
+    if (projectSelector) {
+        projectSelector.addEventListener('change', (e) => {
+            state.selectedProjectId = parseInt(e.target.value);
+            renderModalContent(client);
+        });
+    }
+
+    // If on conversation tab, we don't need to do anything special here as fetchConversation will handle it
+    if (state.currentTab === 'conversation') {
+        fetchConversation(client);
+    }
+}
+
+function renderDetailsTabContent(client) {
+    const leadFields = ['name', 'email', 'phone', 'company', 'stage'];
+    const leadInfoHtml = leadFields.map(field => {
+        const value = client.qualification_data[field] || client[field];
         const label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
         return `
@@ -604,28 +890,40 @@ function openClientModal(client) {
         `;
     }).join('');
 
-    elements.modalBody.innerHTML = `
+    const projects = client.projects || [];
+    const selectedProject = projects.find(p => p.id === state.selectedProjectId) || projects[0];
+
+    let projectsContent = '';
+    if (projects.length === 0) {
+        projectsContent = `
+            <div class="qualification-progress">
+                <h3>Projects</h3>
+                <p class="info-value empty">No projects yet for this lead.</p>
+            </div>
+        `;
+    } else {
+        projectsContent = `
+            <div class="qualification-progress">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3>Projects</h3>
+                    ${projects.length > 1 ? `
+                        <select class="project-dropdown" id="project-selector">
+                            ${projects.map(p => `<option value="${p.id}" ${p.id === selectedProject.id ? 'selected' : ''}>${p.product_idea || 'Untitled Project'}</option>`).join('')}
+                        </select>
+                    ` : ''}
+                </div>
+
+                ${renderProjectDetail(selectedProject)}
+            </div>
+        `;
+    }
+
+    return `
         <div class="client-info-grid">
-            ${fieldsHtml}
+            ${leadInfoHtml}
         </div>
 
-        <div class="qualification-progress">
-            <h3>Qualification Progress</h3>
-            <div class="progress-bar-container">
-                <div class="progress-bar-fill" style="width: ${client.completion_percentage}%"></div>
-            </div>
-            <div class="progress-stats">
-                <span>${client.completed_fields} of ${CONFIG.FIELDS.length} fields completed</span>
-                <span>${client.completion_percentage}%</span>
-            </div>
-        </div>
-
-        <div class="qualification-progress">
-            <h3>Extracted Requirements</h3>
-            <div class="files-list">
-                ${renderRequirementsList(client.requirements)}
-            </div>
-        </div>
+        ${projectsContent}
 
         <div class="qualification-progress">
             <h3>Uploaded Files</h3>
@@ -638,22 +936,243 @@ function openClientModal(client) {
             <h3>Timeline</h3>
             <div class="client-info-grid">
                 <div class="info-card">
-                    <div class="info-label">Created</div>
+                    <div class="info-label">Lead Created</div>
                     <div class="info-value">${formatDate(client.created_at)}</div>
                 </div>
                 <div class="info-card">
-                    <div class="info-label">Last Active</div>
+                    <div class="info-label">Last Interaction</div>
                     <div class="info-value">${formatDate(client.last_active)}</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Phone Verified</div>
-                    <div class="info-value ${!client.phone ? 'empty' : ''}">${client.phone || 'Not provided'}</div>
                 </div>
             </div>
         </div>
     `;
+}
 
-    elements.modal.classList.add('active');
+function renderProjectDetail(project) {
+    if (!project) return '<p class="info-value empty">Project details missing.</p>';
+
+    const budget = formatBudget(project.budget);
+    const date = formatDateShort(project.created_at);
+
+    return `
+        <div class="project-detail-card glass-card">
+            <div class="project-header">
+                <div class="project-title">
+                    <h4>${project.product_idea || 'Untitled Project'}</h4>
+                    <span class="status-badge ${project.status === 'active' ? 'active' : 'closed'}">${project.status || 'active'}</span>
+                </div>
+                <span class="project-date">Created ${date}</span>
+            </div>
+
+            <div class="project-grid">
+                <div class="info-card mini">
+                    <div class="info-label">Budget</div>
+                    <div class="info-value">${budget}</div>
+                </div>
+                <div class="info-card mini">
+                    <div class="info-label">Timeline</div>
+                    <div class="info-value">${project.timeline || 'Not provided'}</div>
+                </div>
+                <div class="info-card mini">
+                    <div class="info-label">Stage</div>
+                    <div class="info-value" style="text-transform: capitalize;">${project.stage || 'Not provided'}</div>
+                </div>
+                <div class="info-card mini">
+                    <div class="info-label">Urgency</div>
+                    <div class="info-value" style="text-transform: capitalize;">${project.urgency || 'Not provided'}</div>
+                </div>
+            </div>
+
+            <div class="project-section">
+                <div class="info-label">Secondary Details</div>
+                <div class="project-grid">
+                    <div class="info-card secondary">
+                        <div class="info-label">Target Market</div>
+                        <div class="info-value">${project.market || 'Not provided'}</div>
+                    </div>
+                    <div class="info-card secondary">
+                        <div class="info-label">Key KPIs</div>
+                        <div class="info-value">${project.kpi || 'Not provided'}</div>
+                    </div>
+                    <div class="info-card secondary">
+                        <div class="info-label">Expectations</div>
+                        <div class="info-value">${project.expectations || 'Not provided'}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="project-section">
+                <div class="info-label">Requirements</div>
+                <div class="requirements-tags">
+                    ${renderRequirementsTags(project.project_requirements)}
+                </div>
+            </div>
+
+            <div class="project-section collapsible-section">
+                <button class="insight-toggle" onclick="this.nextElementSibling.classList.toggle('active'); this.querySelector('.arrow').classList.toggle('rotated');">
+                    <span>Project Insight</span>
+                    <svg class="arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div class="insight-content">
+                    <div class="info-value content-markdown">
+                        ${formatMarkdown(project.project_insight) || 'No insight available for this project.'}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function formatBudget(value) {
+    if (!value) return '<span class="empty">Not provided</span>';
+    const valStr = String(value);
+    if (valStr.includes('$') || valStr.includes('USD')) return valStr;
+    if (valStr.includes('₹')) return valStr;
+    
+    // Format as ₹ if just a number or simple string
+    const num = parseFloat(valStr.replace(/[^0-9.]/g, ''));
+    if (isNaN(num)) return valStr;
+    
+    return '₹' + num.toLocaleString('en-IN');
+}
+
+function formatDateShort(dateString) {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+    });
+}
+
+function renderRequirementsTags(reqs) {
+    if (!reqs || !Array.isArray(reqs) || reqs.length === 0) {
+        return '<p class="info-value empty">No requirements specified.</p>';
+    }
+    return reqs.map(req => `<span class="req-tag">${req}</span>`).join('');
+}
+
+function renderConversationTabContent(client) {
+    return `
+        <div class="chat-wrapper">
+            <div class="chat-header-actions">
+                <button class="chat-refresh-btn" id="chat-refresh" title="Refresh conversation">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+                    </svg>
+                </button>
+            </div>
+            <div class="chat-container" id="chat-messages-container">
+                <div class="chat-loading">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+            <button class="scroll-top-btn" id="scroll-top">Scroll to top</button>
+        </div>
+    `;
+}
+
+async function fetchConversation(client) {
+    const container = document.getElementById('chat-messages-container');
+    const badge = document.getElementById('msg-count-badge');
+    const refreshBtn = document.getElementById('chat-refresh');
+    const email = client.qualification_data.email;
+
+    if (!container) return;
+
+    // Show loading
+    container.innerHTML = `
+        <div class="chat-loading">
+            <span></span><span></span><span></span>
+        </div>
+    `;
+
+    try {
+        const response = await fetch(`${CONFIG.CONVERSATION_API}?email=${encodeURIComponent(email)}`);
+        
+        if (!response.ok) throw new Error('Failed to fetch');
+        
+        const data = await response.json();
+        const messages = data.messages || [];
+        
+        console.log('💬 Conversation data received:', data);
+        if (messages.length > 0) console.log('📄 Sample message object:', messages[0]);
+        
+        // Update badge
+        if (badge) badge.textContent = messages.length;
+        
+        if (messages.length === 0) {
+            container.innerHTML = `
+                <div class="chat-empty">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <p>No conversation history for this lead.</p>
+                </div>
+            `;
+        } else {
+            container.innerHTML = messages.map(msg => `
+                <div class="msg-group ${msg.type}">
+                    <div class="msg-label">${msg.type === 'human' ? 'User' : 'Adra AI'}</div>
+                    <div class="msg-bubble">
+                        <div class="msg-content">${msg.content}</div>
+                        ${msg.has_file ? `
+                            <div class="file-ref">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                                </svg>
+                                <em>Contains file attachment</em>
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div class="msg-id">
+                        #${msg.id} ${ (msg.timestamp || msg.created_at || msg.time) ? `&bull; ${formatMessageTime(msg.timestamp || msg.created_at || msg.time)}` : '' }
+                    </div>
+                </div>
+            `).join('');
+            
+            // Auto scroll to bottom
+            setTimeout(() => {
+                container.scrollTop = container.scrollHeight;
+            }, 100);
+        }
+
+        // Add refresh listener
+        if (refreshBtn) {
+            refreshBtn.onclick = () => fetchConversation(client);
+        }
+
+        // Add scroll listener for "Scroll to top"
+        const scrollTopBtn = document.getElementById('scroll-top');
+        if (scrollTopBtn) {
+            container.onscroll = () => {
+                if (container.scrollTop > 200) {
+                    scrollTopBtn.classList.add('visible');
+                } else {
+                    scrollTopBtn.classList.remove('visible');
+                }
+            };
+            scrollTopBtn.onclick = () => {
+                container.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+        }
+
+    } catch (error) {
+        console.error('Error fetching conversation:', error);
+        container.innerHTML = `
+            <div class="chat-error">
+                <p>Failed to load conversation. Try again.</p>
+                <button id="retry-chat">Retry</button>
+            </div>
+        `;
+        const retryBtn = document.getElementById('retry-chat');
+        if (retryBtn) {
+            retryBtn.onclick = () => fetchConversation(client);
+        }
+    }
 }
 
 function renderRequirementsList(requirements) {
@@ -708,7 +1227,9 @@ function renderFileList(email) {
             fileLink = `${CONFIG.SUPABASE_URL}/storage/v1/object/public/${bucket}/${fileLink}`;
         }
 
-        const fileType = file.file_type || (fileName.split('.').pop().toUpperCase()) || 'FILE';
+        // Derive file type and ensure it's clean for comparison
+        let fileType = file.file_type || fileName.split('.').pop() || 'FILE';
+        if (typeof fileType === 'string') fileType = fileType.trim().toUpperCase();
 
         // Added 'uploaded_at' as high priority based on console feedback
         const fileDate = file.uploaded_at || file.created_at || file.timestamp;
@@ -720,31 +1241,54 @@ function renderFileList(email) {
         }
 
         return `
-            <div class="file-item">
-                <a href="${fileLink}" target="_blank" rel="noopener noreferrer" class="file-info" 
-                   onclick="if(this.getAttribute('href') === '#') { event.preventDefault(); console.error('❌ Link is empty for file:', ${JSON.stringify(file)}); alert('File link is missing in database. Check console for details.'); }">
-                    <div class="file-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-                            <polyline points="13 2 13 9 20 9"></polyline>
+            <div class="file-item" style="display: flex; flex-direction: column;" id="file-${Math.random().toString(36).substr(2, 9)}">
+                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                    <a href="${fileLink}" target="_blank" rel="noopener noreferrer" class="file-info" 
+                       onclick="if(this.getAttribute('href') === '#') { event.preventDefault(); console.error('❌ Link is empty for file:', ${JSON.stringify(file)}); alert('File link is missing in database. Check console for details.'); }">
+                        <div class="file-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                                <polyline points="13 2 13 9 20 9"></polyline>
+                            </svg>
+                        </div>
+                        <div class="file-details">
+                            <span class="file-name">${fileName}</span>
+                            <span class="file-meta">${fileType} • Uploaded ${uploadedAt}</span>
+                        </div>
+                    </a>
+                    
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        ${(fileType === 'PDF' || fileName.toLowerCase().endsWith('.pdf')) ? `
+                            <button class="btn-analyze-file" data-file-url="${fileLink}" data-file-name="${fileName}">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <path d="M12 3l1.912 5.886L20 10.8l-5.886 1.912L12 21l-1.912-5.886L4 12.2l5.886-1.912L12 3z"></path>
+                                </svg>
+                                Analyze
+                            </button>
+                        ` : ''}
+                        
+                        <a href="${fileLink}" target="_blank" rel="noopener noreferrer" class="view-link"
+                           onclick="if(this.getAttribute('href') === '#') { event.preventDefault(); alert('Error: File URL not found in database.'); }">
+                            View
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                <polyline points="15 3 21 3 21 9"></polyline>
+                                <line x1="10" y1="14" x2="21" y2="3"></line>
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="file-insight-container" style="display: none; padding: 15px; background: rgba(0,0,0,0.3); border-radius: 12px; margin-top: 10px; border: 1px solid rgba(147, 51, 234, 0.2);">
+                    <div class="file-insight-title" style="font-size: 0.75rem; font-weight: 800; color: #c084fc; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M12 3l1.912 5.886L20 10.8l-5.886 1.912L12 21l-1.912-5.886L4 12.2l5.886-1.912L12 3z"></path>
                         </svg>
+                        Elite AI Document Analyst
                     </div>
-                    <div class="file-details">
-                        <span class="file-name">${fileName}</span>
-                        <span class="file-meta">${fileType} • Uploaded ${uploadedAt}</span>
-                    </div>
-                </a>
-                <a href="${fileLink}" target="_blank" rel="noopener noreferrer" class="view-link"
-                   onclick="if(this.getAttribute('href') === '#') { event.preventDefault(); alert('Error: File URL not found in database.'); }">
-                    View
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                        <polyline points="15 3 21 3 21 9"></polyline>
-                        <line x1="10" y1="14" x2="21" y2="3"></line>
-                    </svg>
-                </a>
-            </div>
-        `;
+                    <div class="file-insight-body" style="font-size: 0.85rem; line-height: 1.6; color: white; white-space: pre-wrap;"></div>
+                </div>
+            </div>`;
     }).join('');
 }
 
@@ -755,6 +1299,58 @@ function closeClientModal() {
 // ===================================
 // Utility Functions
 // ===================================
+function formatMessageTime(timestamp) {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+function formatMarkdown(text) {
+    if (!text) return '';
+    
+    // 1. Basic Escaping
+    let safe = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+    // 2. Pre-process: Ensure labels and bullets have newlines if they appear mid-text
+    // Use [ ] instead of \s to prevent matching across newlines
+    safe = safe.replace(/([^A-Za-z0-9\n])\s*([A-Z][A-Za-z ]{2,}:)/g, '$1\n$2'); 
+    safe = safe.replace(/(\S)\s*([-•]\s+)/g, '$1\n$2');             // Newline before bullets
+
+    // 3. Bold headers (Label followed by colon at start of line or after newline)
+    // Use [ ] instead of \s to prevent the header itself from spanning multiple lines
+    // 🔥 Merge broken headings like "Budget\nInsight:" → "Budget Insight:"
+    safe = safe.replace(/([A-Za-z]+)\s*\n\s*(Insight:)/g, '$1 $2');
+
+    // 4. Bold markers (**text**)
+    safe = safe.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    // 5. Bullet points (- bullet)
+    safe = safe.replace(/^[-•]\s+(.+)$/gm, '<li>$1</li>');
+
+    // 6. Wrap <li> groups in <ul>
+    safe = safe.replace(/(<li>.*?<\/li>)+/gs, (match) => `<ul style="margin: 10px 0 10px 20px; list-style-type: disc;">${match}</ul>`);
+
+    // 7. Line breaks (only for those not already inside <ul> or <li>)
+    safe = safe.replace(/\n/g, '<br>');
+
+    // 8. Merge split bold headers (e.g., <strong>Budget</strong><br><strong>Insight:</strong>)
+    // This happens when AI outputs headers with separate bolding on new lines
+    safe = safe.replace(/([A-Za-z ]+)\s*\n\s*([A-Za-z ]+:)/g, '$1 $2');
+
+    // Clean up
+    safe = safe.replace(/<\/ul><br>/g, '</ul>');
+    safe = safe.replace(/<br><ul>/g, '<ul>');
+    
+    // Fix common AI artifact: double strong tags
+    safe = safe.replace(/<strong><strong>(.*?)<\/strong><\/strong>/g, '<strong>$1</strong>');
+
+    return safe;
+}
+
 function formatTimeAgo(dateString) {
     const date = new Date(dateString);
     const now = new Date();
@@ -854,9 +1450,51 @@ function initializeEventListeners() {
 
     elements.exportBtn.addEventListener('click', exportData);
 
+    // Activity Sidebar Listeners
+    elements.activityToggle.addEventListener('click', () => {
+        const isActive = elements.activitySidebar.classList.contains('active');
+        toggleActivitySidebar(!isActive);
+    });
+
+    elements.closeActivity.addEventListener('click', () => {
+        toggleActivitySidebar(false);
+    });
+
+    elements.activityPills.forEach(pill => {
+        pill.addEventListener('click', () => {
+            elements.activityPills.forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+
+            const filterType = pill.dataset.type;
+            renderActivityFeed(filterType);
+        });
+    });
+
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && elements.modal.classList.contains('active')) {
-            closeClientModal();
+        if (e.key === 'Escape') {
+            if (elements.modal && elements.modal.classList.contains('active')) {
+                closeClientModal();
+            }
+            if (elements.activitySidebar && elements.activitySidebar.classList.contains('active')) {
+                toggleActivitySidebar(false);
+            }
+        }
+    });
+
+    // Delegated click listener for dynamic modal content
+    elements.modalBody.addEventListener('click', async (e) => {
+        // Handle Strategic Report
+        const insightBtn = e.target.closest('#get-expert-insights');
+        if (insightBtn) {
+            const clientId = insightBtn.dataset.clientId;
+            await fetchAdraInsights(clientId);
+            return;
+        }
+
+        // Handle PDF Document Analysis
+        const analyzeBtn = e.target.closest('.btn-analyze-file');
+        if (analyzeBtn) {
+            await analyzeDocument(analyzeBtn);
         }
     });
 }
@@ -877,6 +1515,169 @@ async function init() {
     console.log('📊 Total clients:', state.clients.length);
 }
 
+// ===================================
+// Adra Expert Insights logic
+// ===================================
+async function fetchAdraInsights(clientId) {
+    const client = state.clients.find(c => c.client_id === clientId);
+    if (!client) return;
+
+    const data = client.qualification_data || {};
+    const resultContainer = document.getElementById(`expert-result-${clientId}`);
+    const btn = document.getElementById('get-expert-insights');
+
+    // 1. Loading State
+    const originalBtnHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `
+        <div class="expert-loader">
+            <span></span><span></span><span></span>
+        </div>
+    `;
+    resultContainer.innerHTML = `
+        <div class="expert-placeholder">
+            <div class="expert-loader"><span></span><span></span><span></span></div>
+            <p>Adra Expert is calculating feasibility and strategic outlook...</p>
+        </div>
+    `;
+
+    try {
+        const response = await fetch('/expert-insights', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                idea: data.product_idea || 'No idea provided',
+                budget: data.budget || 'No budget provided',
+                context: {
+                    urgency: data.urgency,
+                    market: data.market
+                }
+            })
+        });
+
+        const result = await response.json();
+
+        // 2. Clear Loading
+        btn.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            Review Done
+        `;
+
+        // 3. Render with Typewriter effect
+        resultContainer.innerHTML = `<div class="expert-text" id="expert-text-content"></div>`;
+        const textEl = document.getElementById('expert-text-content');
+
+        await typewriterEffect(textEl, result.insight || "Sorry, I couldn't generate an insight at this time.");
+
+    } catch (error) {
+        console.error('Expert Insight Fetch Error:', error);
+        resultContainer.innerHTML = `
+            <div class="info-value error" style="padding: 15px; background: rgba(239, 68, 68, 0.1); border-radius: 12px; margin-top: 10px; border: 1px solid rgba(239, 68, 68, 0.2);">
+                <strong>⚠️ Connection Failed</strong><br>
+                <small style="opacity: 0.8; display: block; margin-top: 4px;">${error.message}</small>
+                <p style="font-size: 0.8rem; margin-top: 10px; opacity: 0.7;">This happens if <b>agent_server.py</b> is not running or is a stale version.</p>
+            </div>
+        `;
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 3l1.912 5.886L20 10.8l-5.886 1.912L12 21l-1.912-5.886L4 12.2l5.886-1.912L12 3z"></path>
+            </svg>
+            RETRY STRATEGY
+        `;
+    }
+}
+
+async function analyzeDocument(btn) {
+    const fileUrl = btn.getAttribute('data-file-url');
+    const fileName = btn.getAttribute('data-file-name');
+    const item = btn.closest('.file-item');
+    const container = item.querySelector('.file-insight-container');
+    const body = container.querySelector('.file-insight-body');
+
+    // Toggle if already open
+    if (container.style.display === 'block') {
+        container.style.display = 'none';
+        btn.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 3l1.912 5.886L20 10.8l-5.886 1.912L12 21l-1.912-5.886L4 12.2l5.886-1.912L12 3z"></path>
+            </svg>
+            Analyze
+        `;
+        return;
+    }
+
+    // 1. Loading State
+    container.style.display = 'block';
+    btn.disabled = true;
+    btn.innerHTML = 'Analyzing...';
+    body.innerHTML = `
+        <div style="display: flex; gap: 6px; padding: 10px 0;">
+            <div style="width: 6px; height: 6px; background: #c084fc; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both;"></div>
+            <div style="width: 6px; height: 6px; background: #c084fc; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; animation-delay: 0.16s;"></div>
+            <div style="width: 6px; height: 6px; background: #c084fc; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; animation-delay: 0.32s;"></div>
+        </div>
+    `;
+
+    try {
+        const response = await fetch('/analyze-document', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: fileUrl, name: fileName })
+        });
+
+        if (!response.ok) throw new Error('Analysis failed');
+        const data = await response.json();
+
+        // 2. Clear Loading & Typewrite
+        body.innerHTML = '';
+        btn.innerHTML = 'Close Insight';
+        btn.disabled = false;
+
+        await typewriterEffect(body, data.analysis || "No requirements found in document.");
+
+    } catch (error) {
+        console.error('Doc Analysis Error:', error);
+        body.innerHTML = `<span style="color: #ef4444; font-size: 0.8rem;">⚠️ Error: ${error.message}. Make sure the file exists and is accessible.</span>`;
+        btn.innerHTML = 'Retry';
+        btn.disabled = false;
+    }
+}
+
+function typewriterEffect(element, text) {
+    return new Promise((resolve) => {
+        let i = 0;
+        element.innerHTML = '<span class="typewriter-cursor"></span>';
+
+        // Basic Markdown Support (bolding)
+        // Use the global formatMarkdown utility
+        const formattedText = formatMarkdown(text);
+
+        const timer = setInterval(() => {
+            if (i < formattedText.length) {
+                if (formattedText[i] === '<') {
+                    const tagEnd = formattedText.indexOf('>', i);
+                    if (tagEnd !== -1) { i = tagEnd + 1; }
+                } else {
+                    i++;
+                }
+                element.innerHTML = formattedText.substring(0, i) + '<span class="typewriter-cursor"></span>';
+
+                // Auto-scroll modal body as typewriter progresses
+                elements.modalBody.scrollTop = elements.modalBody.scrollHeight;
+            } else {
+                clearInterval(timer);
+                const cursor = element.querySelector('.typewriter-cursor');
+                if (cursor) cursor.remove();
+                resolve();
+            }
+        }, 12);
+    });
+}
+
 document.addEventListener('DOMContentLoaded', init);
 
 // ============================================================
@@ -889,7 +1690,7 @@ document.addEventListener('DOMContentLoaded', init);
     // n8n Chat Trigger webhook for the Admin Intelligence Agent
     // The Chat Trigger generates a URL like:
     //   https://<your-n8n-host>/webhook/<webhookId>/chat
-    const AI_WEBHOOK_URL = window.ADRA_AI_WEBHOOK_URL || 'https://vinod2.app.n8n.cloud/webhook/b3b0a7fe-5eef-4449-b480-7ef11c51ae63/chat';
+    const AI_WEBHOOK_URL = 'https://vinod3.app.n8n.cloud/webhook/b3b0a7fe-5eef-4449-b480-7ef11c51ae63/chat';
 
     // Session ID persisted across page visits so Postgres memory works
     const SESSION_KEY = 'adra_admin_ai_session';
@@ -1134,27 +1935,7 @@ document.addEventListener('DOMContentLoaded', init);
     }
 
     function formatBotText(text) {
-        // Escape HTML first
-        let safe = escapeHtml(text);
-
-        // Basic markdown: **bold**, *italic*, `code`, ``` code blocks ```, bullet lists
-        // Code blocks (triple backtick)
-        safe = safe.replace(/```([^`]*?)```/gs, '<pre><code>$1</code></pre>');
-        // Inline code
-        safe = safe.replace(/`([^`]+)`/g, '<code>$1</code>');
-        // Bold
-        safe = safe.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-        // Italic
-        safe = safe.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-        // Bullet points
-        safe = safe.replace(/^[-•]\s(.+)$/gm, '<li>$1</li>');
-        safe = safe.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-        // Numbered lists
-        safe = safe.replace(/^\d+\.\s(.+)$/gm, '<li>$1</li>');
-        // Line breaks
-        safe = safe.replace(/\n/g, '<br>');
-
-        return safe;
+        return formatMarkdown(text);
     }
 
     // ── SCROLL ──────────────────────────────────────────────

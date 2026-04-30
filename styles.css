@@ -1004,3 +1004,37 @@ body {
         transform: translateY(0);
     }
 }
+
+.live-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1.5px solid rgba(255,255,255,0.15);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+.live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #888;
+    transition: background 0.2s;
+}
+.live-btn.live-active {
+    border-color: #ef4444;
+    color: #ef4444;
+}
+.live-btn.live-active .live-dot {
+    background: #ef4444;
+    animation: live-pulse 1.2s ease-in-out infinite;
+}
+@keyframes live-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+    50%       { box-shadow: 0 0 0 5px rgba(239,68,68,0); }
+}

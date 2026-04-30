@@ -31,7 +31,7 @@ Adra is more than just a chatbot; it's a unified intelligence layer for your bus
 
 We recently upgraded the platform with several critical enhancements:
 
-- **n8n Subdomain Migration**: Successfully transitioned to the `vinod2` account for improved reliability and faster execution.
+- **n8n Subdomain Migration**: Successfully transitioned to the `vinod3` account for improved reliability and faster execution.
 - **Security Hardening**: Completely removed hardcoded API keys and secrets from the frontend. All sensitive data is now managed via server-side `.env` files.
 - **Dynamic Configuration**: Implemented a secure backend-to-frontend configuration bridge to prevent secret leakage in public repositories.
 - **Production Readiness**: Initialized a clean GitHub repository with professional documentation and protection against secret leaks.

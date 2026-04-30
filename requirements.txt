@@ -14,4 +14,7 @@ langchain-tavily
 langgraph
 langchain-mcp-adapters
 python-multipart
+pypdf
+yfinance
+mcp
 # Add any others if needed
