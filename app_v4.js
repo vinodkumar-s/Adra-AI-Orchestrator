@@ -13,7 +13,7 @@ const CONFIG = {
     WEBHOOK_URL: 'https://vinod3.app.n8n.cloud/webhook/chatbot',
 
     // Python Agent URL
-    PYTHON_AGENT_URL: 'http://localhost:8000/chat',
+    PYTHON_AGENT_URL: 'https://adra-ai-orchestrator.onrender.com/chat',
 
     // Fields to monitor for extraction feedback
     QUALIFICATION_FIELDS: [
@@ -783,7 +783,7 @@ const VoiceService = {
             this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
             // 2. Fetch a short-lived token from our secure backend
-            const tokenRes = await fetch('/deepgram-token');
+            const tokenRes = await fetch('https://adra-ai-orchestrator.onrender.com/deepgram-token');
             if (!tokenRes.ok) throw new Error('Failed to get Deepgram token');
             const { key } = await tokenRes.json();
 
@@ -1303,7 +1303,7 @@ const TTSService = {
         try {
             elements.micBtn.title = 'Bot is speaking…';
 
-            const response = await fetch('/tts', {
+            const response = await fetch('https://adra-ai-orchestrator.onrender.com/tts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text })

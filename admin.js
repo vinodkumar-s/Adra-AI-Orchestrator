@@ -24,12 +24,12 @@ let supabaseClient = null;
 
 async function initSupabase() {
     if (window.location.protocol === 'file:') {
-        console.error('ERROR: Dashboard opened as file. Use http://localhost:8000/admin.html');
-        alert('⚠️ IMPORTANT: You are viewing this dashboard as a local file. The AI Expert and Database connection will NOT work. \n\nPlease open http://localhost:8000/admin.html instead.');
+        console.error('ERROR: Dashboard opened as file. Please use your deployed URL.');
+        alert('⚠️ IMPORTANT: You are viewing this dashboard as a local file. The AI Expert and Database connection will NOT work. \n\nPlease open your deployed URL instead.');
     }
 
     try {
-        const resp = await fetch('/config');
+        const resp = await fetch('https://adra-ai-orchestrator.onrender.com/config');
         const config = await resp.json();
         CONFIG.SUPABASE_URL = config.SUPABASE_URL;
         CONFIG.SUPABASE_ANON_KEY = config.SUPABASE_ANON_KEY;
@@ -1542,7 +1542,7 @@ async function fetchAdraInsights(clientId) {
     `;
 
     try {
-        const response = await fetch('/expert-insights', {
+        const response = await fetch('https://adra-ai-orchestrator.onrender.com/expert-insights', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1623,7 +1623,7 @@ async function analyzeDocument(btn) {
     `;
 
     try {
-        const response = await fetch('/analyze-document', {
+        const response = await fetch('https://adra-ai-orchestrator.onrender.com/analyze-document', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: fileUrl, name: fileName })
