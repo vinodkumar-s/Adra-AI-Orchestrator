@@ -8,7 +8,7 @@ const CONFIG = {
 
     // Toggle between Supabase and Legacy N8N
     USE_SUPABASE: true,
-    N8N_WEBHOOK_URL: 'https://vinod3.app.n8n.cloud/webhook/chatbot',
+    N8N_WEBHOOK_URL: 'https://vinod4.app.n8n.cloud/webhook/chatbot',
 
     FIELDS: [
         'name', 'email', 'company', 'product_idea',
@@ -16,7 +16,7 @@ const CONFIG = {
         'expectations', 'stage', 'urgency', 'project_requirements'
     ],
     STORAGE_KEY: 'adra_clients_data',
-    CONVERSATION_API: 'https://vinod3.app.n8n.cloud/webhook/admin/conversation'
+    CONVERSATION_API: 'https://vinod4.app.n8n.cloud/webhook/admin/conversation'
 };
 
 // Initialize Supabase Client
@@ -1690,7 +1690,7 @@ document.addEventListener('DOMContentLoaded', init);
     // n8n Chat Trigger webhook for the Admin Intelligence Agent
     // The Chat Trigger generates a URL like:
     //   https://<your-n8n-host>/webhook/<webhookId>/chat
-    const AI_WEBHOOK_URL = 'https://vinod3.app.n8n.cloud/webhook/b3b0a7fe-5eef-4449-b480-7ef11c51ae63/chat';
+    const AI_WEBHOOK_URL = 'https://vinod4.app.n8n.cloud/webhook/b3b0a7fe-5eef-4449-b480-7ef11c51ae63/chat';
 
     // Session ID persisted across page visits so Postgres memory works
     const SESSION_KEY = 'adra_admin_ai_session';

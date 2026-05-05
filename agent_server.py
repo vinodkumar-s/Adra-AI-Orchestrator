@@ -266,7 +266,7 @@ async def forward_to_n8n(message: str, session_id: str):
         return f"I'm having trouble reaching the lead system. Error: {str(e)}"
 
 # Define URL from environment variable
-CONFIG_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://vinod3.app.n8n.cloud/webhook/chatbot")
+CONFIG_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://vinod4.app.n8n.cloud/webhook/chatbot")
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
